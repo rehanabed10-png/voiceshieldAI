@@ -605,6 +605,31 @@ const handleEnroll = async (req: express.Request, res: express.Response) => {
 
   try {
     const result = await daemonManager.request("enroll", params);
+
+    // Asynchronously synchronize speaker enrollment metadata with Supabase
+    if (supabase && result.status === 200 && result.data?.speaker_id) {
+      (async () => {
+        try {
+          const nowIso = new Date().toISOString();
+          const { error } = await supabase.from("speakers").upsert(
+            {
+              speaker_id: result.data.speaker_id,
+              speaker_name: result.data.speaker_name || params.speaker_name || null,
+              status: "active",
+              enrolled_at: nowIso,
+              updated_at: nowIso,
+            },
+            { onConflict: "speaker_id" }
+          );
+          if (error) {
+            console.warn("[Supabase:speakers] Failed to sync enrolled speaker:", error.message);
+          }
+        } catch (e: any) {
+          console.warn("[Supabase:speakers] Exception syncing enrolled speaker:", e?.message);
+        }
+      })();
+    }
+
     res.status(result.status).json(result.data);
   } finally {
     try {
