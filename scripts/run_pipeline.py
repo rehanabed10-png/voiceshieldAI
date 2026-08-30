@@ -94,6 +94,323 @@ def cmd_health():
     print(json.dumps(res))
 
 
+class PipelineWorker:
+    """
+    Persistent inference worker that keeps ML models in memory.
+    Prevents repeated expensive disk and weight loading per analysis request.
+    """
+
+    def __init__(self):
+        self.preprocessor = AudioPreprocessor()
+        self.detector = VoiceCloneDetector()
+        self.detector.load()
+        self.speaker_verifier = PretrainedECAPASpeakerVerifier()
+        self.speaker_verifier.load_model()
+        self.speaker_store = load_persistent_store()
+        self.risk_engine = VoiceShieldRiskEngine()
+        self.model_load_count = 1
+
+    def sync_store(self):
+        """Synchronize in-memory speaker store with persistent storage."""
+        self.speaker_store = load_persistent_store()
+
+    def handle_health(self) -> dict:
+        return {
+            "status": "ok",
+            "service": "VoiceShield API",
+            "version": "1.0.0 (Phase 5)",
+            "supported_models": [
+                "garystafford/wav2vec2-deepfake-voice-detector",
+                "speechbrain/spkrec-ecapa-voxceleb",
+            ],
+            "hardware_profile": "8GB RAM + NVIDIA MX450 / CPU Optimized",
+            "phases_active": [1, 2, 3, 4, 5],
+            "persistent_daemon": True,
+            "model_load_count": self.model_load_count,
+        }
+
+    def handle_list_speakers(self) -> dict:
+        self.sync_store()
+        speakers = []
+        for spk_id, emb in self.speaker_store._store.items():
+            speakers.append({
+                "speaker_id": emb.speaker_id,
+                "speaker_name": emb.metadata.get("speaker_name"),
+                "dimension": emb.dimension,
+                "created_at": emb.created_at,
+            })
+        return {"status": "ok", "speakers": speakers}
+
+    def handle_analyze(self, args: dict) -> dict:
+        audio_path = args.get("file")
+        speaker_id = args.get("speaker_id")
+        threshold = args.get("threshold")
+        caller_id = args.get("caller_id")
+        is_caller_recognized = args.get("is_caller_recognized", True)
+        is_previously_flagged = args.get("is_previously_flagged", False)
+        claimed_role = args.get("claimed_role")
+        requested_amount = args.get("requested_amount")
+        normal_amount = args.get("normal_amount")
+        is_urgent = args.get("is_urgent", False)
+        urgency_reason = args.get("urgency_reason")
+        transcript_text = args.get("transcript_text")
+        acoustic_anomaly = args.get("acoustic_anomaly", 0.0) or 0.0
+
+        if not audio_path or not os.path.exists(audio_path):
+            raise FileNotFoundAudioError(f"Audio file not found: {audio_path}")
+
+        preprocessed = self.preprocessor.process(audio_path)
+        prediction_result = self.detector.predict(preprocessed)
+
+        self.sync_store()
+        speaker_mismatch_signal = 0
+        speaker_verification_status = "NOT_EVALUATED (No speaker_id supplied)"
+        speaker_detail = {
+            "status": "NOT_EVALUATED",
+            "speaker_id": speaker_id,
+            "similarity_score": None,
+            "threshold": None,
+            "is_match": None,
+            "speaker_mismatch_flag": None,
+            "inference_time_ms": None,
+        }
+
+        if speaker_id:
+            enrolled = self.speaker_store.get(speaker_id)
+            if enrolled:
+                ver_res = self.speaker_verifier.verify(
+                    audio=preprocessed,
+                    enrolled_embedding=enrolled,
+                    threshold=threshold,
+                )
+                speaker_mismatch_signal = ver_res.speaker_mismatch_flag
+                speaker_verification_status = "EVALUATED (MATCH)" if ver_res.is_match else "EVALUATED (MISMATCH)"
+                speaker_detail = {
+                    "status": "EVALUATED",
+                    "speaker_id": speaker_id,
+                    "similarity_score": round(ver_res.similarity_score, 4),
+                    "threshold": round(ver_res.threshold, 4),
+                    "is_match": ver_res.is_match,
+                    "speaker_mismatch_flag": ver_res.speaker_mismatch_flag,
+                    "inference_time_ms": round(ver_res.inference_time_ms, 2),
+                }
+            else:
+                speaker_verification_status = f"NOT_ENROLLED (Speaker '{speaker_id}' not found in registry)"
+                speaker_detail = {
+                    "status": "NOT_ENROLLED",
+                    "speaker_id": speaker_id,
+                    "similarity_score": None,
+                    "threshold": None,
+                    "is_match": None,
+                    "speaker_mismatch_flag": None,
+                    "inference_time_ms": None,
+                }
+
+        call_context = CallContext(
+            caller_id=caller_id,
+            is_caller_recognized=is_caller_recognized,
+            is_previously_flagged=is_previously_flagged,
+            claimed_role=claimed_role,
+            requested_transaction_amount=requested_amount,
+            normal_transaction_amount=normal_amount,
+            is_urgent=is_urgent,
+            urgency_reason=urgency_reason,
+            transcript_text=transcript_text,
+        )
+
+        risk_assessment = self.risk_engine.evaluate(
+            fake_probability=prediction_result.fake_probability,
+            speaker_mismatch=speaker_mismatch_signal,
+            acoustic_anomaly=acoustic_anomaly,
+            context=call_context,
+        )
+
+        call_id = f"CALL-{uuid.uuid4().hex[:8].upper()}"
+
+        return {
+            "call_id": call_id,
+            "risk_score": risk_assessment.risk_score,
+            "risk_level": risk_assessment.risk_level,
+            "deepfake_detection": {
+                "prediction": prediction_result.prediction,
+                "fake_probability": round(prediction_result.fake_probability, 4),
+                "real_probability": round(prediction_result.real_probability, 4),
+                "model_type": prediction_result.metadata.get("model_type", "Wav2Vec2"),
+                "model_id": prediction_result.metadata.get("model_id", "garystafford/wav2vec2-deepfake-voice-detector"),
+                "inference_time_ms": round(prediction_result.metadata.get("inference_time_ms", 0.0), 2),
+                "disclaimer": prediction_result.metadata.get("disclaimer"),
+            },
+            "speaker_verification": speaker_detail,
+            "risk_signals": {
+                "fake_probability": round(prediction_result.fake_probability, 4),
+                "speaker_mismatch": speaker_mismatch_signal,
+                "acoustic_anomaly": float(acoustic_anomaly),
+                "context_flag": risk_assessment.signals.get("context_flag", 0.0),
+                "speaker_verification_status": speaker_verification_status,
+                "acoustic_model_status": "INPUT_SUPPLIED (Specialized Prosody Model Deferred)",
+            },
+            "flags": risk_assessment.flags,
+            "recommended_action": risk_assessment.recommended_action,
+            "audio_metadata": {
+                "sample_rate": preprocessed.sample_rate,
+                "original_duration_sec": round(preprocessed.original_duration_sec, 2),
+                "processed_duration_sec": round(preprocessed.processed_duration_sec, 2),
+                "estimated_snr_db": round(preprocessed.estimated_snr_db, 2),
+                "rms_db": round(preprocessed.rms_energy_db, 2),
+            },
+        }
+
+    def handle_enroll(self, args: dict) -> dict:
+        audio_path = args.get("file")
+        speaker_id = args.get("speaker_id")
+        speaker_name = args.get("speaker_name")
+
+        if not audio_path or not os.path.exists(audio_path):
+            raise FileNotFoundAudioError(f"Audio file not found: {audio_path}")
+        if not speaker_id:
+            raise ValueError("Field 'speaker_id' is required for enrollment.")
+
+        preprocessed = self.preprocessor.process(audio_path)
+        self.sync_store()
+
+        start_time = time.perf_counter()
+        embedding = self.speaker_verifier.extract_embedding(preprocessed, speaker_id=speaker_id)
+        if speaker_name:
+            embedding.metadata["speaker_name"] = speaker_name
+
+        self.speaker_store.save(embedding)
+        save_persistent_store(self.speaker_store)
+        total_time_ms = (time.perf_counter() - start_time) * 1000.0
+
+        return {
+            "status": "ENROLLED",
+            "speaker_id": speaker_id,
+            "speaker_name": speaker_name,
+            "embedding_dimension": embedding.dimension,
+            "message": f"Speaker '{speaker_id}' successfully enrolled ({preprocessed.processed_duration_sec:.2f}s audio processed).",
+            "sample_rate_verified": preprocessed.sample_rate,
+            "inference_time_ms": round(total_time_ms, 2),
+        }
+
+    def handle_verify_speaker(self, args: dict) -> dict:
+        audio_path = args.get("file")
+        speaker_id = args.get("speaker_id")
+        threshold = args.get("threshold")
+
+        if not audio_path or not os.path.exists(audio_path):
+            raise FileNotFoundAudioError(f"Audio file not found: {audio_path}")
+
+        self.sync_store()
+        enrolled_embedding = self.speaker_store.get(speaker_id)
+        if not enrolled_embedding:
+            return {
+                "status": 404,
+                "data": {
+                    "error_type": "SpeakerNotEnrolledError",
+                    "message": f"Speaker '{speaker_id}' has not been enrolled. Please enroll reference audio first.",
+                    "status": 404,
+                }
+            }
+
+        preprocessed = self.preprocessor.process(audio_path)
+        ver_result = self.speaker_verifier.verify(
+            audio=preprocessed,
+            enrolled_embedding=enrolled_embedding,
+            threshold=threshold,
+        )
+
+        match_desc = "MATCH (Voice verified)" if ver_result.is_match else "MISMATCH (Voice biometric discrepancy)"
+
+        return {
+            "status": "SUCCESS",
+            "speaker_id": speaker_id,
+            "similarity_score": round(ver_result.similarity_score, 4),
+            "threshold": round(ver_result.threshold, 4),
+            "match": ver_result.is_match,
+            "speaker_mismatch_flag": ver_result.speaker_mismatch_flag,
+            "inference_time_ms": round(ver_result.inference_time_ms, 2),
+            "message": f"Verification completed for speaker '{speaker_id}': {match_desc}.",
+        }
+
+    def dispatch(self, req: dict) -> dict:
+        cmd = req.get("command")
+        args = req.get("args", {})
+
+        try:
+            if cmd == "health":
+                data = self.handle_health()
+                return {"status": 200, "data": data}
+            elif cmd == "list-speakers":
+                data = self.handle_list_speakers()
+                return {"status": 200, "data": data}
+            elif cmd == "analyze":
+                data = self.handle_analyze(args)
+                return {"status": 200, "data": data}
+            elif cmd == "enroll":
+                data = self.handle_enroll(args)
+                return {"status": 200, "data": data}
+            elif cmd == "verify-speaker":
+                res = self.handle_verify_speaker(args)
+                if isinstance(res, dict) and "status" in res and isinstance(res["status"], int) and res["status"] != 200:
+                    return res
+                return {"status": 200, "data": res}
+            else:
+                return {
+                    "status": 400,
+                    "data": {"error_type": "UnknownCommandError", "message": f"Unknown command: {cmd}"},
+                }
+        except AudioTooShortError as err:
+            return {"status": 422, "data": {"error_type": "AudioTooShortError", "message": str(err), "status": 422}}
+        except AudioTooLongError as err:
+            return {"status": 422, "data": {"error_type": "AudioTooLongError", "message": str(err), "status": 422}}
+        except AudioSilentError as err:
+            return {"status": 422, "data": {"error_type": "AudioSilentError", "message": str(err), "status": 422}}
+        except (AudioCorruptError, UnsupportedFormatError) as err:
+            return {"status": 400, "data": {"error_type": "AudioCorruptError", "message": str(err), "status": 400}}
+        except FileNotFoundAudioError as err:
+            return {"status": 404, "data": {"error_type": "FileNotFoundAudioError", "message": str(err), "status": 404}}
+        except Exception as err:
+            return {"status": 500, "data": {"error_type": "InferenceError", "message": str(err), "status": 500}}
+
+
+def cmd_daemon():
+    """
+    Long-running daemon loop over stdio.
+    Loads models once at startup and services incoming requests via JSON lines.
+    """
+    real_stdout = sys.stdout
+    # Route standard prints/logs to stderr so they do not corrupt the stdio JSON-RPC protocol
+    sys.stdout = sys.stderr
+
+    sys.stderr.write("[PipelineDaemon] Initializing persistent ML models...\n")
+    worker = PipelineWorker()
+    sys.stderr.write("[PipelineDaemon] ML models initialized and ready in memory.\n")
+
+    # Output ready sentinel
+    real_stdout.write(json.dumps({"status": "READY", "message": "VoiceShield persistent pipeline ready"}) + "\n")
+    real_stdout.flush()
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+            req_id = req.get("id")
+            result = worker.dispatch(req)
+            result["id"] = req_id
+            real_stdout.write(json.dumps(result) + "\n")
+            real_stdout.flush()
+        except Exception as err:
+            err_res = {
+                "id": req.get("id") if "req" in locals() and isinstance(req, dict) else None,
+                "status": 500,
+                "data": {"error_type": "DaemonDispatchError", "message": str(err)},
+            }
+            real_stdout.write(json.dumps(err_res) + "\n")
+            real_stdout.flush()
+
+
 def cmd_analyze(args):
     audio_path = args.file
     speaker_id = args.speaker_id
@@ -354,6 +671,9 @@ def main():
     # Health
     subparsers.add_parser("health")
 
+    # Daemon (Persistent Worker)
+    subparsers.add_parser("daemon")
+
     # List Speakers
     subparsers.add_parser("list-speakers")
 
@@ -389,6 +709,8 @@ def main():
 
     if args.command == "health":
         cmd_health()
+    elif args.command == "daemon":
+        cmd_daemon()
     elif args.command == "list-speakers":
         cmd_list_speakers()
     elif args.command == "analyze":

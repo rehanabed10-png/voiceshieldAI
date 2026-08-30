@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { spawn } from "child_process";
+import { ChildProcess, spawn } from "child_process";
 import multer from "multer";
 import os from "os";
 import { createServer as createViteServer } from "vite";
@@ -19,104 +19,281 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB limit
 });
 
-// Helper function to resolve Python executable from project venv
-function getPythonExecutable(): string {
+// Helper to resolve the correct Python executable (virtualenv or system python)
+function getPythonCommand(): string {
   if (process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH)) {
     return process.env.PYTHON_PATH;
   }
-  const venvWindows = path.join(process.cwd(), "venv", "Scripts", "python.exe");
-  const venvUnix = path.join(process.cwd(), "venv", "bin", "python");
-  const dotVenvWindows = path.join(process.cwd(), ".venv", "Scripts", "python.exe");
-  const dotVenvUnix = path.join(process.cwd(), ".venv", "bin", "python");
-
-  if (fs.existsSync(venvWindows)) return venvWindows;
-  if (fs.existsSync(venvUnix)) return venvUnix;
-  if (fs.existsSync(dotVenvWindows)) return dotVenvWindows;
-  if (fs.existsSync(dotVenvUnix)) return dotVenvUnix;
-
+  const venvPaths = [
+    path.join(process.cwd(), "venv", "Scripts", "python.exe"),
+    path.join(process.cwd(), ".venv", "Scripts", "python.exe"),
+    path.join(process.cwd(), ".venv", "bin", "python3"),
+    path.join(process.cwd(), ".venv", "bin", "python"),
+    path.join(process.cwd(), "venv", "bin", "python3"),
+    path.join(process.cwd(), "venv", "bin", "python"),
+  ];
+  for (const p of venvPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
   return process.platform === "win32" ? "python" : "python3";
 }
 
-// Helper function to execute the Python pipeline CLI runner
-function runPythonPipeline(args: string[]): Promise<{ status: number; data: any }> {
-  return new Promise((resolve) => {
-    const pythonCmd = getPythonExecutable();
-    const scriptPath = path.join(process.cwd(), "scripts", "run_pipeline.py");
-    const fullArgs = [scriptPath, ...args];
+// ----------------------------------------------------
+// PERSISTENT PYTHON INFERENCE DAEMON MANAGER
+// ----------------------------------------------------
+class PythonInferenceDaemonManager {
+  private proc: ChildProcess | null = null;
+  private stdoutBuffer: string = "";
+  private isReady: boolean = false;
+  private pendingRequests: Map<
+    string,
+    {
+      resolve: (value: { status: number; data: any }) => void;
+      reject: (reason: any) => void;
+      timer: NodeJS.Timeout;
+    }
+  > = new Map();
+  private initPromise: Promise<void> | null = null;
+  private reqSequence: number = 0;
 
-    const proc = spawn(pythonCmd, fullArgs);
-    let stdout = "";
-    let stderr = "";
+  constructor() {
+    this.ensureStarted();
+    this.setupProcessExitHandlers();
+  }
 
-    proc.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    proc.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    proc.on("close", (code) => {
-      // Clean stdout of any non-JSON prefix lines (like logger notices)
-      const lines = stdout.trim().split("\n");
-      let jsonStr = "";
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i].trim();
-        if (line.startsWith("{") && line.endsWith("}")) {
-          jsonStr = line;
-          break;
-        }
-      }
-
-      if (code === 0 && jsonStr) {
+  private setupProcessExitHandlers(): void {
+    const cleanup = () => {
+      if (this.proc) {
         try {
-          const parsed = JSON.parse(jsonStr);
-          return resolve({ status: 200, data: parsed });
-        } catch (e) {
-          return resolve({
-            status: 500,
-            data: { error_type: "ParseError", message: "Failed to parse Python pipeline response." },
-          });
-        }
-      }
-
-      // If error or stderr contains error JSON
-      const errLines = stderr.trim().split("\n");
-      let errJsonStr = "";
-      for (let i = errLines.length - 1; i >= 0; i--) {
-        const line = errLines[i].trim();
-        if (line.startsWith("{") && line.endsWith("}")) {
-          errJsonStr = line;
-          break;
-        }
-      }
-
-      if (errJsonStr) {
-        try {
-          const errParsed = JSON.parse(errJsonStr);
-          return resolve({ status: errParsed.status || 400, data: errParsed });
+          this.proc.kill("SIGTERM");
         } catch (e) {
           // ignore
         }
+        this.proc = null;
       }
+    };
+    process.on("exit", cleanup);
+    process.on("SIGINT", cleanup);
+    process.on("SIGTERM", cleanup);
+  }
 
-      return resolve({
-        status: code === 0 ? 200 : 500,
+  private ensureStarted(): Promise<void> {
+    if (this.proc && this.isReady) {
+      return Promise.resolve();
+    }
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
+    this.initPromise = new Promise((resolve) => {
+      const pythonCmd = getPythonCommand();
+      const scriptPath = path.join(process.cwd(), "scripts", "run_pipeline.py");
+
+      console.log(`[PythonDaemonManager] Starting persistent Python daemon with ${pythonCmd}...`);
+      const child = spawn(pythonCmd, [scriptPath, "daemon"]);
+      this.proc = child;
+      this.stdoutBuffer = "";
+      this.isReady = false;
+
+      child.stdout.on("data", (chunk: Buffer) => {
+        this.stdoutBuffer += chunk.toString("utf-8");
+        this.flushStdoutBuffer(resolve);
+      });
+
+      child.stderr.on("data", (chunk: Buffer) => {
+        const text = chunk.toString("utf-8").trim();
+        if (text) {
+          console.log(`[PythonDaemon:stderr] ${text}`);
+        }
+      });
+
+      child.on("error", (err) => {
+        console.error(`[PythonDaemonManager] Process error:`, err);
+        this.handleProcessCrash(err);
+      });
+
+      child.on("exit", (code, signal) => {
+        console.warn(`[PythonDaemonManager] Process exited with code ${code}, signal ${signal}`);
+        this.handleProcessCrash(new Error(`Daemon exited with code ${code}`));
+      });
+    });
+
+    return this.initPromise;
+  }
+
+  private flushStdoutBuffer(readyCallback?: () => void): void {
+    let newlineIdx: number;
+    while ((newlineIdx = this.stdoutBuffer.indexOf("\n")) !== -1) {
+      const line = this.stdoutBuffer.substring(0, newlineIdx).trim();
+      this.stdoutBuffer = this.stdoutBuffer.substring(newlineIdx + 1);
+
+      if (!line) continue;
+
+      try {
+        const parsed = JSON.parse(line);
+
+        // Check for startup ready sentinel
+        if (parsed.status === "READY" && !this.isReady) {
+          console.log(`[PythonDaemonManager] Persistent inference models ready.`);
+          this.isReady = true;
+          this.initPromise = null;
+          if (readyCallback) readyCallback();
+          continue;
+        }
+
+        // Match with pending request ID
+        if (parsed.id && this.pendingRequests.has(parsed.id)) {
+          const pending = this.pendingRequests.get(parsed.id)!;
+          clearTimeout(pending.timer);
+          this.pendingRequests.delete(parsed.id);
+
+          pending.resolve({
+            status: parsed.status || 200,
+            data: parsed.data !== undefined ? parsed.data : parsed,
+          });
+        }
+      } catch (e) {
+        console.warn(`[PythonDaemonManager] Non-JSON or unparseable line: ${line}`);
+      }
+    }
+  }
+
+  private handleProcessCrash(err: Error): void {
+    this.proc = null;
+    this.isReady = false;
+    this.initPromise = null;
+
+    // Reject all pending requests
+    for (const [id, req] of this.pendingRequests.entries()) {
+      clearTimeout(req.timer);
+      req.resolve({
+        status: 500,
         data: {
-          error_type: "PipelineExecutionError",
-          message: stderr.trim() || stdout.trim() || "Pipeline execution failed.",
+          error_type: "DaemonCrashError",
+          message: `Persistent inference worker crashed: ${err.message}`,
         },
       });
-    });
+    }
+    this.pendingRequests.clear();
+  }
 
-    proc.on("error", (err) => {
-      resolve({
-        status: 500,
-        data: { error_type: "SpawnError", message: `Failed to spawn Python process: ${err.message}` },
+  public async request(command: string, args: Record<string, any> = {}): Promise<{ status: number; data: any }> {
+    try {
+      await this.ensureStarted();
+    } catch (e) {
+      console.warn(`[PythonDaemonManager] Failed to start persistent daemon, falling back to CLI runner...`);
+      return this.runCliFallback(command, args);
+    }
+
+    if (!this.proc || !this.proc.stdin || !this.proc.stdin.writable) {
+      return this.runCliFallback(command, args);
+    }
+
+    const reqId = `req_${Date.now()}_${++this.reqSequence}`;
+    const payload = JSON.stringify({ id: reqId, command, args }) + "\n";
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (this.pendingRequests.has(reqId)) {
+          this.pendingRequests.delete(reqId);
+          resolve({
+            status: 504,
+            data: {
+              error_type: "InferenceTimeoutError",
+              message: "ML inference request timed out.",
+            },
+          });
+        }
+      }, 90000); // 90 seconds timeout
+
+      this.pendingRequests.set(reqId, { resolve, reject, timer });
+
+      try {
+        this.proc!.stdin!.write(payload, "utf-8", (err) => {
+          if (err) {
+            clearTimeout(timer);
+            this.pendingRequests.delete(reqId);
+            resolve({
+              status: 500,
+              data: {
+                error_type: "DaemonWriteError",
+                message: `Failed to write request to daemon: ${err.message}`,
+              },
+            });
+          }
+        });
+      } catch (err: any) {
+        clearTimeout(timer);
+        this.pendingRequests.delete(reqId);
+        resolve({
+          status: 500,
+          data: {
+            error_type: "DaemonWriteError",
+            message: `Failed to send request: ${err.message}`,
+          },
+        });
+      }
+    });
+  }
+
+  // Safety fallback to one-shot CLI runner if daemon is not available
+  private runCliFallback(command: string, args: Record<string, any>): Promise<{ status: number; data: any }> {
+    return new Promise((resolve) => {
+      const pythonCmd = getPythonCommand();
+      const scriptPath = path.join(process.cwd(), "scripts", "run_pipeline.py");
+      const cliArgs = [scriptPath, command];
+
+      for (const [k, v] of Object.entries(args)) {
+        if (v !== undefined && v !== null) {
+          const flag = `--${k.replace(/_/g, "-")}`;
+          cliArgs.push(flag, String(v));
+        }
+      }
+
+      const proc = spawn(pythonCmd, cliArgs);
+      let stdout = "";
+      let stderr = "";
+
+      proc.stdout.on("data", (c) => (stdout += c.toString()));
+      proc.stderr.on("data", (c) => (stderr += c.toString()));
+
+      proc.on("close", (code) => {
+        const lines = stdout.trim().split("\n");
+        let jsonStr = "";
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const line = lines[i].trim();
+          if (line.startsWith("{") && line.endsWith("}")) {
+            jsonStr = line;
+            break;
+          }
+        }
+        if (code === 0 && jsonStr) {
+          try {
+            return resolve({ status: 200, data: JSON.parse(jsonStr) });
+          } catch (e) {
+            // fallthrough
+          }
+        }
+        return resolve({
+          status: code === 0 ? 200 : 500,
+          data: { error_type: "CliFallbackError", message: stderr || stdout || "Execution failed." },
+        });
+      });
+
+      proc.on("error", (err) => {
+        resolve({
+          status: 500,
+          data: { error_type: "SpawnError", message: err.message },
+        });
       });
     });
-  });
+  }
 }
+
+// Instantiate daemon manager singleton
+const daemonManager = new PythonInferenceDaemonManager();
 
 // ----------------------------------------------------
 // API ROUTES (FastAPI Parity Contracts)
@@ -124,7 +301,7 @@ function runPythonPipeline(args: string[]): Promise<{ status: number; data: any 
 
 // 1. Health check: /health and /api/health
 const handleHealth = async (_req: express.Request, res: express.Response) => {
-  const result = await runPythonPipeline(["health"]);
+  const result = await daemonManager.request("health");
   res.status(result.status).json(result.data);
 };
 app.get("/health", handleHealth);
@@ -132,7 +309,7 @@ app.get("/api/health", handleHealth);
 
 // 2. List enrolled speakers: /api/speakers and /speakers
 const handleListSpeakers = async (_req: express.Request, res: express.Response) => {
-  const result = await runPythonPipeline(["list-speakers"]);
+  const result = await daemonManager.request("list-speakers");
   res.status(result.status).json(result.data);
 };
 app.get("/speakers", handleListSpeakers);
@@ -154,6 +331,10 @@ app.get("/api/samples", (_req, res) => {
       description:
         f === "valid_speech.wav"
           ? "Standard 3.0s Clean Speech Sample (Expected: REAL / Low Risk)"
+          : f === "real_01.wav"
+          ? "Harmonic Human Speech Sample (Expected: REAL / Low Risk)"
+          : f === "fake_01.wav"
+          ? "High-Frequency Synthetic Voice Clone Sample (Expected: FAKE / High Risk)"
           : f === "too_short.wav"
           ? "Short 0.2s Audio Sample (Expected: AudioTooShortError)"
           : f === "silent_audio.wav"
@@ -181,36 +362,48 @@ const handleAnalyze = async (req: express.Request, res: express.Response) => {
     });
   }
 
-  const args: string[] = ["analyze", "--file", file.path];
+  const params: Record<string, any> = {
+    file: file.path,
+  };
 
-  if (req.body.speaker_id) args.push("--speaker-id", String(req.body.speaker_id));
-  if (req.body.verification_threshold) args.push("--threshold", String(req.body.verification_threshold));
-  if (req.body.caller_id) args.push("--caller-id", String(req.body.caller_id));
-  if (req.body.is_caller_recognized !== undefined)
-    args.push("--is-caller-recognized", String(req.body.is_caller_recognized));
-  if (req.body.is_previously_flagged !== undefined)
-    args.push("--is-previously-flagged", String(req.body.is_previously_flagged));
-  if (req.body.claimed_role) args.push("--claimed-role", String(req.body.claimed_role));
-  if (req.body.requested_transaction_amount)
-    args.push("--requested-amount", String(req.body.requested_transaction_amount));
-  if (req.body.normal_transaction_amount)
-    args.push("--normal-amount", String(req.body.normal_transaction_amount));
-  if (req.body.is_urgent !== undefined) args.push("--is-urgent", String(req.body.is_urgent));
-  if (req.body.urgency_reason) args.push("--urgency-reason", String(req.body.urgency_reason));
-  if (req.body.transcript_text) args.push("--transcript-text", String(req.body.transcript_text));
-  if (req.body.acoustic_anomaly_override)
-    args.push("--acoustic-anomaly", String(req.body.acoustic_anomaly_override));
-
-  const result = await runPythonPipeline(args);
-
-  // Clean up uploaded temporary file
-  try {
-    fs.unlinkSync(file.path);
-  } catch (e) {
-    // ignore
+  if (req.body.speaker_id) params.speaker_id = String(req.body.speaker_id);
+  if (req.body.verification_threshold) params.threshold = parseFloat(req.body.verification_threshold);
+  if (req.body.caller_id) params.caller_id = String(req.body.caller_id);
+  if (req.body.is_caller_recognized !== undefined) {
+    params.is_caller_recognized = String(req.body.is_caller_recognized).toLowerCase() === "true" || req.body.is_caller_recognized === true;
+  }
+  if (req.body.is_previously_flagged !== undefined) {
+    params.is_previously_flagged = String(req.body.is_previously_flagged).toLowerCase() === "true" || req.body.is_previously_flagged === true;
+  }
+  if (req.body.claimed_role) params.claimed_role = String(req.body.claimed_role);
+  if (req.body.requested_transaction_amount) {
+    params.requested_amount = parseFloat(req.body.requested_transaction_amount);
+  }
+  if (req.body.normal_transaction_amount) {
+    params.normal_amount = parseFloat(req.body.normal_transaction_amount);
+  }
+  if (req.body.is_urgent !== undefined) {
+    params.is_urgent = String(req.body.is_urgent).toLowerCase() === "true" || req.body.is_urgent === true;
+  }
+  if (req.body.urgency_reason) params.urgency_reason = String(req.body.urgency_reason);
+  if (req.body.transcript_text) params.transcript_text = String(req.body.transcript_text);
+  if (req.body.acoustic_anomaly_override) {
+    params.acoustic_anomaly = parseFloat(req.body.acoustic_anomaly_override);
   }
 
-  res.status(result.status).json(result.data);
+  try {
+    const result = await daemonManager.request("analyze", params);
+    res.status(result.status).json(result.data);
+  } finally {
+    // Clean up uploaded temporary file immediately
+    try {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
 };
 
 app.post("/analyze", upload.single("file"), handleAnalyze);
@@ -234,20 +427,26 @@ const handleEnroll = async (req: express.Request, res: express.Response) => {
     });
   }
 
-  const args: string[] = ["enroll", "--file", file.path, "--speaker-id", String(speakerId)];
+  const params: Record<string, any> = {
+    file: file.path,
+    speaker_id: String(speakerId),
+  };
   if (req.body.speaker_name) {
-    args.push("--speaker-name", String(req.body.speaker_name));
+    params.speaker_name = String(req.body.speaker_name);
   }
-
-  const result = await runPythonPipeline(args);
 
   try {
-    fs.unlinkSync(file.path);
-  } catch (e) {
-    // ignore
+    const result = await daemonManager.request("enroll", params);
+    res.status(result.status).json(result.data);
+  } finally {
+    try {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    } catch (e) {
+      // ignore
+    }
   }
-
-  res.status(result.status).json(result.data);
 };
 
 app.post("/enroll", upload.single("file"), handleEnroll);
@@ -271,20 +470,26 @@ const handleVerifySpeaker = async (req: express.Request, res: express.Response) 
     });
   }
 
-  const args: string[] = ["verify-speaker", "--file", file.path, "--speaker-id", String(speakerId)];
+  const params: Record<string, any> = {
+    file: file.path,
+    speaker_id: String(speakerId),
+  };
   if (req.body.threshold) {
-    args.push("--threshold", String(req.body.threshold));
+    params.threshold = parseFloat(req.body.threshold);
   }
-
-  const result = await runPythonPipeline(args);
 
   try {
-    fs.unlinkSync(file.path);
-  } catch (e) {
-    // ignore
+    const result = await daemonManager.request("verify-speaker", params);
+    res.status(result.status).json(result.data);
+  } finally {
+    try {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    } catch (e) {
+      // ignore
+    }
   }
-
-  res.status(result.status).json(result.data);
 };
 
 app.post("/verify-speaker", upload.single("file"), handleVerifySpeaker);
