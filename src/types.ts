@@ -103,3 +103,25 @@ export interface CallContextState {
   urgency_reason: string;
   transcript_text: string;
 }
+
+export type LiveSessionStatus = "idle" | "chunking" | "streaming" | "paused" | "completed" | "error";
+
+export interface AudioChunkWindow {
+  index: number;
+  startTimeSec: number;
+  endTimeSec: number;
+  blob: Blob;
+  filename: string;
+}
+
+export interface LiveChunkResult {
+  chunkIndex: number;
+  totalChunks: number;
+  startTimeSec: number;
+  endTimeSec: number;
+  durationSec: number;
+  processingLatencyMs: number;
+  response: AnalyzeResponse;
+  timestamp: number;
+}
+

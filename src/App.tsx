@@ -6,6 +6,7 @@ import { ProcessingView } from "./components/ProcessingView";
 import { AnalysisResult } from "./components/AnalysisResult";
 import { ErrorAlert } from "./components/ErrorAlert";
 import { SpeakerProfiles } from "./components/SpeakerProfiles";
+import { LiveAnalysisView } from "./components/LiveAnalysisView";
 import {
   AnalyzeResponse,
   CallContextState,
@@ -23,7 +24,8 @@ import { ShieldCheck, ArrowRight, Activity } from "lucide-react";
 
 export default function App() {
   // Global Navigation
-  const [activeTab, setActiveTab] = useState<"analysis" | "speakers">("analysis");
+  const [activeTab, setActiveTab] = useState<"analysis" | "live" | "speakers">("analysis");
+
 
   // Health & Catalog Data
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -231,13 +233,24 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 2: Speaker Biometric Profiles Registry (Phase 5) */}
+        {/* Tab 2: Live Real-Time Call Monitor (Phase 7A) */}
+        {activeTab === "live" && (
+          <LiveAnalysisView
+            speakers={speakers}
+            samples={samples}
+            context={context}
+            onContextChange={handleContextChange}
+          />
+        )}
+
+        {/* Tab 3: Speaker Biometric Profiles Registry (Phase 5) */}
         {activeTab === "speakers" && (
           <SpeakerProfiles
             speakers={speakers}
             onRefreshSpeakers={() => fetchSpeakers().then(setSpeakers)}
           />
         )}
+
 
       </main>
 

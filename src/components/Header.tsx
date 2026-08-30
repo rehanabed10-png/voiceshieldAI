@@ -4,8 +4,8 @@ import { HealthResponse } from "../types";
 
 interface HeaderProps {
   health: HealthResponse | null;
-  activeTab: "analysis" | "speakers";
-  onTabChange: (tab: "analysis" | "speakers") => void;
+  activeTab: "analysis" | "live" | "speakers";
+  onTabChange: (tab: "analysis" | "live" | "speakers") => void;
   enrolledCount: number;
 }
 
@@ -44,19 +44,34 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           id="nav-tab-analysis"
           onClick={() => onTabChange("analysis")}
-          className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
             activeTab === "analysis"
               ? "bg-slate-900 text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
           }`}
         >
           <Radio className="w-3.5 h-3.5" />
-          Signal Analysis & Live Monitor
+          Single-File Analysis
+        </button>
+        <button
+          id="nav-tab-live"
+          onClick={() => onTabChange("live")}
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            activeTab === "live"
+              ? "bg-slate-900 text-white shadow-sm"
+              : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+          }`}
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+          </span>
+          Live Call Monitor (Phase 7A)
         </button>
         <button
           id="nav-tab-speakers"
           onClick={() => onTabChange("speakers")}
-          className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
             activeTab === "speakers"
               ? "bg-slate-900 text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
@@ -96,9 +111,16 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => onTabChange("analysis")}
             className={`p-1.5 rounded ${activeTab === "analysis" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-            title="Analysis"
+            title="Single Analysis"
           >
             <Radio className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onTabChange("live")}
+            className={`p-1.5 rounded ${activeTab === "live" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+            title="Live Call Monitor"
+          >
+            <span className="w-2 h-2 rounded-full bg-blue-500 block m-1" />
           </button>
           <button
             onClick={() => onTabChange("speakers")}
@@ -112,4 +134,5 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+
 
