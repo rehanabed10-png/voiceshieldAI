@@ -9,7 +9,7 @@ import { createServer as createViteServer } from "vite";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Setup JSON & Form parsing
 app.use(express.json());
