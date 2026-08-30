@@ -31,3 +31,8 @@ Thumbs.db
 # Node (preview environment)
 node_modules/
 dist/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example

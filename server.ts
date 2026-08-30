@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -5,6 +6,7 @@ import { ChildProcess, spawn } from "child_process";
 import multer from "multer";
 import os from "os";
 import { createServer as createViteServer } from "vite";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const app = express();
 const PORT = 3000;
@@ -296,6 +298,165 @@ class PythonInferenceDaemonManager {
 const daemonManager = new PythonInferenceDaemonManager();
 
 // ----------------------------------------------------
+// SUPABASE CLIENT & PERSISTENCE (Server-Side Only)
+// ----------------------------------------------------
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  "";
+
+let supabase: SupabaseClient | null = null;
+if (SUPABASE_URL && SUPABASE_KEY) {
+  try {
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    console.log("[Supabase] Initialized backend database client successfully.");
+  } catch (err: any) {
+    console.warn("[Supabase] Failed to initialize client:", err.message);
+  }
+} else {
+  console.log("[Supabase] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured. Telemetry persistence disabled.");
+}
+
+async function persistAnalysisToSupabase(
+  resultData: any,
+  params: Record<string, any>,
+  reqBody: Record<string, any>
+): Promise<void> {
+  if (!supabase || !resultData || !resultData.call_id) {
+    return;
+  }
+
+  try {
+    // 1. Resolve textual speaker_id (e.g. SPK-001) to speakers.id (UUID)
+    let speakerDbUuid: string | null = null;
+    const requestedSpeakerId = params.speaker_id || reqBody.speaker_id;
+    if (requestedSpeakerId) {
+      const { data: speakerRow, error: spkErr } = await supabase
+        .from("speakers")
+        .select("id")
+        .eq("speaker_id", String(requestedSpeakerId))
+        .maybeSingle();
+
+      if (!spkErr && speakerRow?.id) {
+        speakerDbUuid = speakerRow.id;
+      }
+    }
+
+    // 2. Resolve contact if caller_id or contact_id matches
+    let contactDbUuid: string | null = null;
+    if (reqBody.contact_id) {
+      contactDbUuid = String(reqBody.contact_id);
+    }
+
+    const durationSec =
+      resultData.audio_metadata?.processed_duration_sec ??
+      resultData.audio_metadata?.original_duration_sec ??
+      null;
+    const nowIso = new Date().toISOString();
+    const startedAtIso = durationSec
+      ? new Date(Date.now() - Math.round(durationSec * 1000)).toISOString()
+      : nowIso;
+
+    // 3. Insert into calls table
+    const { data: callRow, error: callErr } = await supabase
+      .from("calls")
+      .insert({
+        call_id: resultData.call_id,
+        speaker_id: speakerDbUuid,
+        contact_id: contactDbUuid,
+        caller_id: reqBody.caller_id ? String(reqBody.caller_id) : null,
+        claimed_role: reqBody.claimed_role ? String(reqBody.claimed_role) : null,
+        started_at: startedAtIso,
+        ended_at: nowIso,
+        duration_seconds: durationSec,
+      })
+      .select("id")
+      .single();
+
+    if (callErr) {
+      console.warn("[Supabase:calls] Failed to insert call record:", callErr.message);
+      return;
+    }
+
+    if (!callRow?.id) {
+      return;
+    }
+
+    // 4. Map & sanitize risk_level to conform to CHECK (risk_level IN ('LOW', 'MEDIUM', 'HIGH'))
+    let sanitizedRiskLevel: string | null = null;
+    const rawRiskLevel = String(resultData.risk_level || "").toUpperCase();
+    if (rawRiskLevel === "LOW" || rawRiskLevel === "MEDIUM" || rawRiskLevel === "HIGH") {
+      sanitizedRiskLevel = rawRiskLevel;
+    } else if (rawRiskLevel === "CRITICAL") {
+      sanitizedRiskLevel = "HIGH";
+    }
+
+    // 5. Convert acoustic_anomaly to boolean (Schema is BOOLEAN NOT NULL)
+    let acousticAnomalyBool: boolean = false;
+    if (params.acoustic_anomaly !== undefined && params.acoustic_anomaly !== null) {
+      acousticAnomalyBool =
+        typeof params.acoustic_anomaly === "boolean"
+          ? params.acoustic_anomaly
+          : parseFloat(params.acoustic_anomaly) > 0;
+    } else if (reqBody.acoustic_anomaly_override !== undefined && reqBody.acoustic_anomaly_override !== null) {
+      acousticAnomalyBool = parseFloat(reqBody.acoustic_anomaly_override) > 0;
+    }
+
+    // 6. Insert into risk_events table
+    const { error: riskErr } = await supabase.from("risk_events").insert({
+      call_id: callRow.id,
+      risk_score: typeof resultData.risk_score === "number" ? resultData.risk_score : null,
+      risk_level: sanitizedRiskLevel,
+      recommended_action: resultData.recommended_action ? String(resultData.recommended_action) : null,
+      deepfake_prediction: resultData.deepfake_detection?.prediction
+        ? String(resultData.deepfake_detection.prediction)
+        : null,
+      fake_probability:
+        typeof resultData.deepfake_detection?.fake_probability === "number"
+          ? resultData.deepfake_detection.fake_probability
+          : null,
+      speaker_similarity:
+        typeof resultData.speaker_verification?.similarity_score === "number"
+          ? resultData.speaker_verification.similarity_score
+          : null,
+      speaker_match:
+        typeof resultData.speaker_verification?.is_match === "boolean"
+          ? resultData.speaker_verification.is_match
+          : null,
+      speaker_verification_status: resultData.speaker_verification?.status
+        ? String(resultData.speaker_verification.status)
+        : null,
+      speaker_mismatch_flag:
+        typeof resultData.speaker_verification?.speaker_mismatch_flag === "number"
+          ? resultData.speaker_verification.speaker_mismatch_flag
+          : null,
+      acoustic_anomaly: acousticAnomalyBool,
+      caller_recognized: typeof params.is_caller_recognized === "boolean" ? params.is_caller_recognized : null,
+      previously_flagged: typeof params.is_previously_flagged === "boolean" ? params.is_previously_flagged : null,
+      transaction_amount: typeof params.requested_amount === "number" ? params.requested_amount : null,
+      normal_transaction_amount: typeof params.normal_amount === "number" ? params.normal_amount : null,
+      is_urgent: typeof params.is_urgent === "boolean" ? params.is_urgent : null,
+      urgency_reason: params.urgency_reason ? String(params.urgency_reason) : null,
+      model_id: resultData.deepfake_detection?.model_id ? String(resultData.deepfake_detection.model_id) : null,
+      inference_time_ms:
+        typeof resultData.deepfake_detection?.inference_time_ms === "number"
+          ? resultData.deepfake_detection.inference_time_ms
+          : null,
+    });
+
+    if (riskErr) {
+      console.warn("[Supabase:risk_events] Failed to insert risk event record:", riskErr.message);
+    }
+  } catch (err: any) {
+    console.warn("[Supabase:Catch] Error persisting analysis metadata:", err.message);
+  }
+}
+
+// ----------------------------------------------------
 // API ROUTES (FastAPI Parity Contracts)
 // ----------------------------------------------------
 
@@ -394,6 +555,13 @@ const handleAnalyze = async (req: express.Request, res: express.Response) => {
   try {
     const result = await daemonManager.request("analyze", params);
     res.status(result.status).json(result.data);
+
+    // Asynchronously persist metadata in background without blocking response
+    if (result.status === 200 && result.data && result.data.call_id) {
+      persistAnalysisToSupabase(result.data, params, req.body).catch((dbErr) => {
+        console.warn("[Supabase:AsyncError] Unhandled error during persistence:", dbErr.message);
+      });
+    }
   } finally {
     // Clean up uploaded temporary file immediately
     try {
