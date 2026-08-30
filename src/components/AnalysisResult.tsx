@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   ShieldCheck,
   ShieldAlert,
@@ -11,9 +11,11 @@ import {
   Copy,
   Check,
   RotateCcw,
-  Volume2,
-  FileCheck,
-  Info,
+  Flag,
+  Radio,
+  Download,
+  Ban,
+  Lock
 } from "lucide-react";
 import { AnalyzeResponse } from "../types";
 
@@ -23,7 +25,7 @@ interface AnalysisResultProps {
 }
 
 export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset }) => {
-  const [copied, setCopied] = React.useState(false);
+  const [copied, setCopied] = useState(false);
 
   const isFake = result.deepfake_detection.prediction === "FAKE";
   const isHighRisk = result.risk_level === "HIGH" || result.risk_level === "CRITICAL" || result.risk_score >= 60;
@@ -32,206 +34,239 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset 
   const fakePct = (result.deepfake_detection.fake_probability * 100).toFixed(1);
   const realPct = (result.deepfake_detection.real_probability * 100).toFixed(1);
 
+  // SVG Gauge calculations
+  const circumference = 2 * Math.PI * 45; // ~282.74
+  const strokeOffset = circumference - (result.risk_score / 100) * circumference;
+
   const copyJson = () => {
     navigator.clipboard.writeText(JSON.stringify(result, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Action badge color
-  const getActionBadge = (action: string) => {
+  const getActionTheme = (action: string) => {
     switch (action) {
       case "ALLOW":
         return {
-          bg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+          bg: "bg-[#009668] text-white",
+          border: "border-[#009668]/30",
+          text: "text-[#009668]",
           label: "ALLOW (Safe to Proceed)",
         };
       case "WARN":
         return {
-          bg: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+          bg: "bg-amber-600 text-white",
+          border: "border-amber-500/40",
+          text: "text-amber-600",
           label: "WARN (Caution Advised)",
         };
       case "SECONDARY_VERIFICATION":
         return {
-          bg: "bg-rose-500/15 text-rose-400 border-rose-500/40",
+          bg: "bg-rose-600 text-white",
+          border: "border-rose-500/40",
+          text: "text-rose-600",
           label: "SECONDARY VERIFICATION REQUIRED",
         };
       case "BLOCK":
         return {
-          bg: "bg-red-500/20 text-red-400 border-red-500/50",
-          label: "BLOCK (Immediate Threat)",
+          bg: "bg-[#ba1a1a] text-white",
+          border: "border-[#ba1a1a]/50",
+          text: "text-[#ba1a1a]",
+          label: "TERMINATE CALL / BLOCK THREAT",
         };
       default:
         return {
-          bg: "bg-slate-800 text-slate-300 border-slate-700",
+          bg: "bg-slate-900 text-white",
+          border: "border-slate-300",
+          text: "text-slate-900",
           label: action,
         };
     }
   };
 
-  const actionBadge = getActionBadge(result.recommended_action);
+  const actionTheme = getActionTheme(result.recommended_action);
 
   return (
     <div id="analysis-result-container" className="space-y-6">
       
-      {/* 1. Main Assessment Banner */}
-      <div
-        id="result-main-banner"
-        className={`rounded-2xl p-6 border transition-all ${
-          isHighRisk
-            ? "bg-rose-950/40 border-rose-500/40 shadow-xl shadow-rose-950/30"
-            : isLowRisk
-            ? "bg-emerald-950/30 border-emerald-500/40 shadow-xl shadow-emerald-950/20"
-            : "bg-amber-950/30 border-amber-500/40 shadow-xl shadow-amber-950/20"
-        }`}
-      >
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-          
-          {/* Left: Verdict Status */}
-          <div className="flex items-start gap-4">
-            <div
-              className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 mt-0.5 border ${
-                isHighRisk
-                  ? "bg-rose-500/20 border-rose-500/40 text-rose-400"
-                  : isLowRisk
-                  ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-                  : "bg-amber-500/20 border-amber-500/40 text-amber-400"
-              }`}
-            >
-              {isHighRisk ? (
-                <ShieldAlert className="w-8 h-8" />
-              ) : isLowRisk ? (
-                <ShieldCheck className="w-8 h-8" />
-              ) : (
-                <AlertTriangle className="w-8 h-8" />
-              )}
+      {/* 1. Primary Verdict Banner (Stitch High-Risk vs Low-Risk) */}
+      {isHighRisk ? (
+        /* Stitch HIGH-RISK Hero Alert Banner */
+        <section className="glass-error rounded-2xl p-6 sm:p-8 shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pulse-border-threat">
+          <div className="z-10 flex flex-col gap-2">
+            <div className="flex items-center gap-3 mb-1">
+              <span className="bg-[#ba1a1a] text-white px-3.5 py-1 rounded-full text-xs font-mono font-bold tracking-widest flex items-center gap-1.5 shadow-md">
+                <ShieldAlert className="w-3.5 h-3.5" />
+                HIGH RISK THREAT
+              </span>
+              <span className="text-xs font-mono bg-white/60 px-3 py-1 rounded-full border border-red-200 text-red-900">
+                VERDICT: FAKE CLONE
+              </span>
             </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <span
-                  id="verdict-prediction-pill"
-                  className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider font-mono border ${
-                    isFake
-                      ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
-                      : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                  }`}
-                >
-                  PREDICTION: {result.deepfake_detection.prediction}
-                </span>
-
-                <span
-                  id="risk-level-pill"
-                  className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase font-mono border ${
-                    isHighRisk
-                      ? "bg-rose-500/20 text-rose-400 border-rose-500/40"
-                      : isLowRisk
-                      ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
-                      : "bg-amber-500/20 text-amber-400 border-amber-500/40"
-                  }`}
-                >
-                  RISK LEVEL: {result.risk_level}
-                </span>
-              </div>
-
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-                {isHighRisk
-                  ? "High Fraud / Voice-Cloning Threat Detected"
-                  : isLowRisk
-                  ? "Authentic Human Voice / Low Security Risk"
-                  : "Elevated Security Suspicion"}
-              </h2>
-
-              <p className="text-xs sm:text-sm text-slate-300">
-                {isHighRisk
-                  ? "Multiple compounding signals indicate synthetic voice reproduction or impersonation attempt."
-                  : isLowRisk
-                  ? "Acoustic features and biometric profile correspond to legitimate authentic speech."
-                  : "Potential anomalies detected. Review flags and biometric match before approving."}
-              </p>
-            </div>
+            
+            <h2 className="text-5xl font-black text-[#ba1a1a] uppercase tracking-tight">
+              FAKE
+            </h2>
+            
+            <p className="text-sm text-slate-700 max-w-2xl font-medium">
+              Neural acoustic feature extraction indicates synthetic voice reproduction and adversarial cloning signatures.
+            </p>
           </div>
 
-          {/* Right: Risk Score Gauge & Action */}
-          <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center gap-3 shrink-0 pt-4 md:pt-0 border-t md:border-t-0 border-slate-800/80">
-            <div className="text-left md:text-right">
-              <div className="text-[11px] font-mono text-slate-400 uppercase">
-                Composite Risk Score
+          {/* Right Gauge & Immediate Action CTA */}
+          <div className="z-10 flex flex-col items-end gap-4 glass-card p-5 rounded-2xl shadow-md w-full md:w-auto shrink-0">
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-[11px] font-mono text-slate-500 uppercase">FRAUD PROBABILITY</p>
+                <p className="text-3xl font-black text-slate-900 leading-none">
+                  {result.risk_score}<span className="text-base text-slate-400 font-normal">/100</span>
+                </p>
               </div>
-              <div className="flex items-baseline gap-1 md:justify-end">
-                <span
-                  id="metric-risk-score"
-                  className={`text-4xl font-extrabold font-mono tracking-tight ${
-                    isHighRisk
-                      ? "text-rose-400"
-                      : isLowRisk
-                      ? "text-emerald-400"
-                      : "text-amber-400"
-                  }`}
-                >
+              
+              {/* Circular Gauge */}
+              <div className="relative w-16 h-16 flex items-center justify-center bg-white/40 rounded-full shadow-inner p-1">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" fill="none" r="45" stroke="rgba(0,0,0,0.1)" strokeWidth="8" />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    fill="none"
+                    r="45"
+                    stroke="#ba1a1a"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={strokeOffset}
+                    strokeLinecap="round"
+                    strokeWidth="8"
+                    className="transition-all duration-1000 ease-out"
+                  />
+                </svg>
+                <span className="absolute text-sm font-bold font-mono text-[#ba1a1a]">
                   {result.risk_score}
                 </span>
-                <span className="text-slate-500 font-mono text-sm">/ 100</span>
               </div>
             </div>
 
-            <div
-              id="recommended-action-badge"
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${actionBadge.bg}`}
+            <button
+              onClick={onReset}
+              className="w-full bg-[#ba1a1a] hover:bg-red-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 active:scale-95"
             >
-              {actionBadge.label}
+              <Ban className="w-4 h-4" />
+              {result.recommended_action === "BLOCK" ? "TERMINATE CALL IMMEDIATELY" : actionTheme.label}
+            </button>
+          </div>
+        </section>
+      ) : (
+        /* Stitch LOW-RISK Hero Header */
+        <section className="glass-panel rounded-2xl p-6 sm:p-8 shadow-lg border border-[#009668]/30 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="bg-[#009668]/10 text-[#009668] border border-[#009668]/30 px-3.5 py-1 rounded-full text-xs font-mono font-bold tracking-widest flex items-center gap-1.5 shadow-sm">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                LOW RISK &bull; AUTHENTIC
+              </span>
+              <span className="text-xs font-mono bg-white/80 px-3 py-1 rounded-full border border-slate-200 text-slate-700">
+                VERDICT: REAL
+              </span>
             </div>
+
+            <h2 className="text-5xl font-black text-[#009668] uppercase tracking-tight">
+              REAL
+            </h2>
+
+            <p className="text-sm text-slate-600 font-medium max-w-2xl">
+              Natural prosody, verified biometric voiceprint, and acoustic signatures correspond to legitimate human speech.
+            </p>
           </div>
 
-        </div>
-      </div>
+          {/* Right Gauge & Safe Action */}
+          <div className="flex flex-col items-end gap-3 glass-panel-darker p-5 rounded-2xl shadow-sm w-full md:w-auto shrink-0">
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-[11px] font-mono text-slate-500 uppercase">RISK SCORE</p>
+                <p className="text-3xl font-black text-slate-900 leading-none">
+                  {result.risk_score}<span className="text-base text-slate-400 font-normal">/100</span>
+                </p>
+              </div>
 
-      {/* 2. Detailed Technical Breakdown Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Circular Gauge */}
+              <div className="relative w-16 h-16 flex items-center justify-center bg-white rounded-full shadow-inner p-1">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" fill="none" r="45" stroke="rgba(0,0,0,0.08)" strokeWidth="8" />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    fill="none"
+                    r="45"
+                    stroke="#009668"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={strokeOffset}
+                    strokeLinecap="round"
+                    strokeWidth="8"
+                    className="transition-all duration-1000 ease-out"
+                  />
+                </svg>
+                <span className="absolute text-sm font-bold font-mono text-[#009668]">
+                  {result.risk_score}
+                </span>
+              </div>
+            </div>
+
+            <div className="px-4 py-1.5 rounded-lg bg-[#009668]/15 border border-[#009668]/30 text-xs font-bold text-[#009668]">
+              {actionTheme.label}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 2. Detailed Technical Bento Grid (Spans 3 Columns) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         
-        {/* Card A: Deepfake Detection Probabilities */}
-        <div id="card-deepfake-metrics" className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2 text-slate-200 font-semibold text-sm">
-              <Cpu className="w-4 h-4 text-amber-400" />
-              <span>Deepfake Transformer Analysis</span>
+        {/* Card 1: Neural Synthetic Probability */}
+        <div className="glass-card rounded-2xl p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+            <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+              <Cpu className="w-4 h-4 text-blue-600" />
+              <span>Deepfake AI Probability</span>
             </div>
             <span className="text-[11px] font-mono text-slate-500">Wav2Vec2</span>
           </div>
 
-          {/* Probability Comparison Bar */}
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-300 font-medium">Fake (Synthetic AI) Probability:</span>
-              <span className="font-mono font-bold text-rose-400">{fakePct}%</span>
+              <span className="text-slate-600 font-medium">Synthetic (AI) Confidence:</span>
+              <span className={`font-mono font-bold ${isFake ? "text-[#ba1a1a]" : "text-slate-700"}`}>
+                {fakePct}%
+              </span>
             </div>
-            <div className="h-2.5 w-full bg-slate-950 rounded-full overflow-hidden flex border border-slate-800">
+
+            <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
               <div
-                className="bg-rose-500 h-full transition-all duration-500"
+                className="bg-[#ba1a1a] h-full transition-all duration-500"
                 style={{ width: `${fakePct}%` }}
               />
               <div
-                className="bg-emerald-500 h-full transition-all duration-500"
+                className="bg-[#009668] h-full transition-all duration-500"
                 style={{ width: `${realPct}%` }}
               />
             </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-400">
-              <span>Real Probability: <strong className="text-emerald-400 font-mono">{realPct}%</strong></span>
-              <span>Inference: <strong className="font-mono">{result.deepfake_detection.inference_time_ms} ms</strong></span>
+
+            <div className="flex items-center justify-between text-xs font-mono text-slate-500">
+              <span>Real Probability: <strong className="text-[#009668]">{realPct}%</strong></span>
+              <span>Latency: <strong>{result.deepfake_detection.inference_time_ms}ms</strong></span>
             </div>
           </div>
 
-          <div className="p-2.5 rounded-lg bg-slate-950 text-[11px] text-slate-400 font-mono space-y-1">
-            <div className="text-slate-300 truncate">Model: {result.deepfake_detection.model_id}</div>
+          <div className="p-3 rounded-xl bg-white/70 border border-slate-200/70 text-[11px] font-mono text-slate-600 space-y-1">
+            <div className="truncate text-slate-800">Model: {result.deepfake_detection.model_id}</div>
             <div>Architecture: {result.deepfake_detection.model_type}</div>
           </div>
         </div>
 
-        {/* Card B: Speaker Verification (Phase 5 Biometrics) */}
-        <div id="card-speaker-verification" className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2 text-slate-200 font-semibold text-sm">
-              <Fingerprint className="w-4 h-4 text-cyan-400" />
+        {/* Card 2: Biometric Speaker Match (ECAPA-TDNN) */}
+        <div className="glass-card rounded-2xl p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+            <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+              <Fingerprint className="w-4 h-4 text-blue-600" />
               <span>Biometric Speaker Match</span>
             </div>
             <span className="text-[11px] font-mono text-slate-500">ECAPA-TDNN</span>
@@ -239,32 +274,38 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset 
 
           {result.speaker_verification.status === "EVALUATED" ? (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400">Claimed Speaker ID:</span>
-                <span className="text-xs font-mono font-bold text-white bg-slate-800 px-2 py-0.5 rounded">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500">Target Speaker Profile:</span>
+                <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
                   {result.speaker_verification.speaker_id}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800/80">
-                <div className="flex items-center gap-2">
+              <div className={`flex items-center justify-between p-3.5 rounded-xl border ${
+                result.speaker_verification.is_match
+                  ? "bg-emerald-50/80 border-emerald-200"
+                  : "bg-red-50/80 border-red-200"
+              }`}>
+                <div className="flex items-center gap-2.5">
                   {result.speaker_verification.is_match ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    <CheckCircle2 className="w-5 h-5 text-[#009668]" />
                   ) : (
-                    <XCircle className="w-5 h-5 text-rose-400" />
+                    <XCircle className="w-5 h-5 text-[#ba1a1a]" />
                   )}
                   <div>
-                    <div className="text-xs font-bold text-slate-200">
-                      {result.speaker_verification.is_match ? "Biometric Match" : "Biometric Mismatch"}
+                    <div className="text-xs font-bold text-slate-900">
+                      {result.speaker_verification.is_match ? "Biometric Match" : "Speaker Mismatch"}
                     </div>
-                    <div className="text-[11px] text-slate-400">
-                      Signal Flag (M): <span className="font-mono">{result.speaker_verification.speaker_mismatch_flag}</span>
+                    <div className="text-[11px] text-slate-500">
+                      Signal Flag (M): <span className="font-mono font-bold">{result.speaker_verification.speaker_mismatch_flag}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <div className="text-xs font-mono font-bold text-emerald-400">
+                  <div className={`text-xs font-mono font-bold ${
+                    result.speaker_verification.is_match ? "text-[#009668]" : "text-[#ba1a1a]"
+                  }`}>
                     Sim: {result.speaker_verification.similarity_score}
                   </div>
                   <div className="text-[10px] text-slate-500 font-mono">
@@ -273,69 +314,68 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset 
                 </div>
               </div>
 
-              <div className="text-[11px] text-slate-400 flex justify-between">
-                <span>Vector Dimension: 192-D</span>
-                <span>Latency: {result.speaker_verification.inference_time_ms} ms</span>
+              <div className="text-[11px] text-slate-500 font-mono flex justify-between">
+                <span>Vector: 192-D</span>
+                <span>Latency: {result.speaker_verification.inference_time_ms}ms</span>
               </div>
             </div>
           ) : result.speaker_verification.status === "NOT_ENROLLED" ? (
-            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 space-y-1.5">
-              <div className="font-semibold flex items-center gap-1.5">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-1">
+              <div className="font-bold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600" />
                 Speaker Not Enrolled
               </div>
-              <p className="text-[11px] text-slate-300">
-                Speaker ID &lsquo;{result.speaker_verification.speaker_id}&rsquo; was not found in the active biometric store. Enroll reference audio first in the Speaker Profiles tab.
+              <p className="text-[11px] text-slate-600">
+                Speaker &lsquo;{result.speaker_verification.speaker_id}&rsquo; was not found in active profile store. Enroll reference audio in Speaker Profiles.
               </p>
             </div>
           ) : (
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400 space-y-1.5">
-              <div className="font-medium text-slate-300 flex items-center gap-1.5">
-                <Info className="w-4 h-4 text-slate-400" />
-                No Speaker ID Provided
+            <div className="p-3.5 rounded-xl bg-white/70 border border-slate-200 text-xs text-slate-600 space-y-1">
+              <div className="font-semibold text-slate-800">
+                Biometrics Skipped
               </div>
               <p className="text-[11px] text-slate-500">
-                Biometric verification was skipped. Supply a claimed speaker ID during analysis to verify voiceprints against enrolled profiles.
+                No claimed speaker ID was supplied. Biometric voiceprint matching was bypassed.
               </p>
             </div>
           )}
         </div>
 
-        {/* Card C: Acoustic & Signal Telemetry */}
-        <div id="card-audio-telemetry" className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2 text-slate-200 font-semibold text-sm">
-              <Activity className="w-4 h-4 text-emerald-400" />
+        {/* Card 3: Acoustic Signal Telemetry */}
+        <div className="glass-card rounded-2xl p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+            <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+              <Activity className="w-4 h-4 text-emerald-600" />
               <span>Acoustic Signal Telemetry</span>
             </div>
             <span className="text-[11px] font-mono text-slate-500">Phase 1 Preprocessed</span>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/60">
-              <div className="text-slate-400 text-[11px]">Sample Rate</div>
-              <div className="text-sm font-mono font-bold text-white mt-0.5">
+            <div className="p-2.5 rounded-xl bg-white/80 border border-slate-200">
+              <div className="text-slate-500 text-[11px]">Sample Rate</div>
+              <div className="text-sm font-mono font-bold text-slate-900 mt-0.5">
                 {result.audio_metadata.sample_rate} Hz
               </div>
             </div>
 
-            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/60">
-              <div className="text-slate-400 text-[11px]">Duration (Proc / Orig)</div>
-              <div className="text-sm font-mono font-bold text-white mt-0.5">
+            <div className="p-2.5 rounded-xl bg-white/80 border border-slate-200">
+              <div className="text-slate-500 text-[11px]">Duration (Proc / Orig)</div>
+              <div className="text-sm font-mono font-bold text-slate-900 mt-0.5">
                 {result.audio_metadata.processed_duration_sec}s / {result.audio_metadata.original_duration_sec}s
               </div>
             </div>
 
-            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/60">
-              <div className="text-slate-400 text-[11px]">Estimated SNR</div>
-              <div className="text-sm font-mono font-bold text-emerald-400 mt-0.5">
+            <div className="p-2.5 rounded-xl bg-white/80 border border-slate-200">
+              <div className="text-slate-500 text-[11px]">Estimated SNR</div>
+              <div className="text-sm font-mono font-bold text-emerald-700 mt-0.5">
                 {result.audio_metadata.estimated_snr_db} dB
               </div>
             </div>
 
-            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/60">
-              <div className="text-slate-400 text-[11px]">RMS Energy</div>
-              <div className="text-sm font-mono font-bold text-slate-300 mt-0.5">
+            <div className="p-2.5 rounded-xl bg-white/80 border border-slate-200">
+              <div className="text-slate-500 text-[11px]">RMS Energy</div>
+              <div className="text-sm font-mono font-bold text-slate-700 mt-0.5">
                 {result.audio_metadata.rms_db} dB
               </div>
             </div>
@@ -348,11 +388,11 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset 
 
       </div>
 
-      {/* 3. Explainable Backend Flags Container */}
-      <div id="explainable-flags-section" className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-          <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-            <FileCheck className="w-4 h-4 text-cyan-400" />
+      {/* 3. Explainable Flags Container */}
+      <div id="explainable-flags-section" className="glass-card rounded-2xl p-5 space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Flag className="w-4 h-4 text-blue-600" />
             Explainable Risk Signals & Detection Flags ({result.flags.length})
           </h3>
           <span className="text-xs text-slate-500 font-mono">Multi-Signal Fusion</span>
@@ -363,16 +403,16 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset 
             {result.flags.map((flag, idx) => (
               <div
                 key={idx}
-                className="flex items-start gap-2.5 p-2.5 rounded-lg bg-slate-950/80 border border-slate-800/80 text-xs text-slate-300"
+                className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50/80 border border-red-200 text-xs text-red-900"
               >
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span className="leading-relaxed">{flag}</span>
+                <AlertTriangle className="w-4 h-4 text-[#ba1a1a] shrink-0 mt-0.5" />
+                <span className="leading-relaxed font-medium">{flag}</span>
               </div>
             ))}
           </div>
         ) : (
-          <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/60 flex items-center gap-2 text-xs text-emerald-400">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 flex items-center gap-2 text-xs text-emerald-900 font-medium">
+            <CheckCircle2 className="w-4 h-4 text-[#009668] shrink-0" />
             <span>No suspicious fraud indicators, executive impersonation rules, or biometric mismatches triggered.</span>
           </div>
         )}
@@ -383,7 +423,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset 
         <button
           id="btn-analyze-another"
           onClick={onReset}
-          className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center justify-center gap-2 transition-colors"
+          className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md transition-all active:scale-95"
         >
           <RotateCcw className="w-4 h-4" />
           Analyze Another Audio Stream
@@ -392,9 +432,9 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset 
         <button
           id="btn-copy-json"
           onClick={copyJson}
-          className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 font-mono text-xs flex items-center justify-center gap-2 transition-colors"
+          className="w-full sm:w-auto px-4 py-2.5 rounded-xl glass-card hover:bg-white text-slate-700 font-mono text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
         >
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+          {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
           {copied ? "Report Copied to Clipboard" : "Copy Raw JSON Report"}
         </button>
       </div>
@@ -402,3 +442,4 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset 
     </div>
   );
 };
+

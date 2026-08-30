@@ -19,7 +19,7 @@ import {
   fetchSamples,
   fetchSpeakers,
 } from "./api";
-import { ShieldCheck, ArrowRight, Clock } from "lucide-react";
+import { ShieldCheck, ArrowRight, Activity } from "lucide-react";
 
 export default function App() {
   // Global Navigation
@@ -128,8 +128,15 @@ export default function App() {
   };
 
   return (
-    <div id="voiceshield-root" className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col">
-      {/* Sticky Header with Live Status Indicator */}
+    <div id="voiceshield-root" className="min-h-screen relative overflow-x-hidden font-sans text-slate-900 bg-[#f8fafc] flex flex-col selection:bg-blue-500 selection:text-white">
+      {/* Dynamic Ambient Blur Blobs */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="ambient-blob bg-blue-300/40 w-[550px] h-[550px] -top-40 -left-20" />
+        <div className="ambient-blob bg-emerald-200/40 w-[500px] h-[500px] top-1/3 -right-32" />
+        <div className="ambient-blob bg-indigo-200/30 w-[600px] h-[600px] -bottom-40 left-1/4" />
+      </div>
+
+      {/* Top Navigation Bar */}
       <Header
         health={health}
         activeTab={activeTab}
@@ -137,8 +144,8 @@ export default function App() {
         enrolledCount={speakers.length}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+      {/* Main Content Container */}
+      <main className="flex-1 relative z-10 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         
         {/* Tab 1: Threat Analysis Dashboard */}
         {activeTab === "analysis" && (
@@ -171,12 +178,12 @@ export default function App() {
 
                 {/* Primary Analyze CTA Button */}
                 {!isProcessing && (
-                  <div className="flex justify-end pt-1">
+                  <div className="flex justify-end pt-2">
                     <button
                       id="btn-analyze-audio"
                       onClick={handleRunAnalysis}
                       disabled={isProcessing}
-                      className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-emerald-950/50 active:scale-[0.98]"
+                      className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-blue-500/25 transition-all active:scale-[0.98]"
                     >
                       <ShieldCheck className="w-5 h-5" />
                       Execute Threat Analysis
@@ -205,17 +212,17 @@ export default function App() {
             {!selectedFile && !isProcessing && !result && !error && (
               <div
                 id="empty-dashboard-guide"
-                className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-6 sm:p-8 text-center space-y-3"
+                className="glass-card rounded-2xl p-8 sm:p-10 text-center space-y-4 shadow-lg border border-white/80"
               >
-                <div className="w-12 h-12 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-slate-400 mx-auto">
-                  <Clock className="w-6 h-6" />
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 mx-auto shadow-sm">
+                  <Activity className="w-7 h-7" />
                 </div>
-                <div className="space-y-1">
-                  <h3 className="text-sm font-semibold text-slate-300">
-                    Analysis Results: Standing By
+                <div className="space-y-1.5">
+                  <h3 className="text-base font-bold text-slate-900">
+                    Real-Time Pipeline Standing By
                   </h3>
-                  <p className="text-xs text-slate-500 max-w-lg mx-auto leading-relaxed">
-                    Upload an audio stream recording or select one of the quick validation test samples above to evaluate deepfake synthetic voice likelihood, 192-D biometric voiceprint match, and multi-signal fraud score.
+                  <p className="text-xs text-slate-600 max-w-xl mx-auto leading-relaxed">
+                    Upload an audio stream recording or select one of the curated test samples above to evaluate synthetic voice likelihood, 192-D biometric voiceprint match, and multi-signal financial fraud risk.
                   </p>
                 </div>
               </div>
@@ -235,12 +242,13 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-900 bg-slate-950 py-4 text-center text-xs text-slate-600">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <footer className="w-full relative z-10 border-t border-slate-200 bg-white/70 backdrop-blur-md py-4 text-center text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 font-medium">
           <span>VoiceShield &bull; SIH 2026 Problem Statement 26104</span>
-          <span className="font-mono text-[11px]">Wav2Vec2 Deepfake Detector + ECAPA-TDNN Speaker Verifier</span>
+          <span className="font-mono text-[11px] text-slate-600">Wav2Vec2 Deepfake Detector + ECAPA-TDNN Speaker Verifier</span>
         </div>
       </footer>
     </div>
   );
 }
+

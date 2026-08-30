@@ -30,36 +30,36 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({ error, onReset }) => {
   };
 
   return (
-    <div id="analysis-error-card" className="bg-rose-950/30 border border-rose-500/40 rounded-2xl p-6 space-y-4 shadow-lg shadow-rose-950/20">
-      <div className="flex items-start gap-3.5">
-        <div className="w-11 h-11 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0 mt-0.5">
+    <div id="analysis-error-card" className="glass-error rounded-2xl p-6 sm:p-7 space-y-4 shadow-xl border border-red-300">
+      <div className="flex items-start gap-4">
+        <div className="w-11 h-11 rounded-xl bg-red-100 border border-red-200 flex items-center justify-center text-[#ba1a1a] shrink-0 mt-0.5 shadow-sm">
           <AlertOctagon className="w-6 h-6" />
         </div>
         <div className="space-y-1.5 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">
+            <span className="text-xs font-bold font-mono px-2.5 py-0.5 rounded-full bg-[#ba1a1a] text-white">
               {error.error_type || "ANALYSIS FAILED"}
             </span>
             {error.status && (
-              <span className="text-[11px] font-mono text-slate-400">
+              <span className="text-[11px] font-mono text-slate-500 bg-white/70 px-2 py-0.5 rounded border border-slate-200">
                 HTTP {error.status}
               </span>
             )}
           </div>
-          <h3 className="text-base font-bold text-white">
-            Audio Processing Error
+          <h3 className="text-base font-bold text-slate-900">
+            Audio Preprocessing / Pipeline Exception
           </h3>
-          <p className="text-xs text-rose-200 leading-relaxed font-mono bg-rose-950/50 p-3 rounded-lg border border-rose-800/40">
+          <p className="text-xs text-red-900 leading-relaxed font-mono bg-white/80 p-3.5 rounded-xl border border-red-200/80 shadow-inner">
             {error.message}
           </p>
         </div>
       </div>
 
-      <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
-        <HelpCircle className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+      <div className="p-4 rounded-xl bg-white/70 border border-slate-200 text-xs text-slate-700 flex items-start gap-3">
+        <HelpCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
         <div>
-          <div className="font-semibold text-slate-200">Resolution Tip:</div>
-          <div className="text-slate-400 mt-0.5 text-[11px]">
+          <div className="font-bold text-slate-900">Resolution Tip:</div>
+          <div className="text-slate-600 mt-0.5 text-[11px] leading-relaxed">
             {getHelpTip(error.error_type)}
           </div>
         </div>
@@ -69,7 +69,7 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({ error, onReset }) => {
         <button
           id="btn-error-retry"
           onClick={onReset}
-          className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-semibold text-xs flex items-center gap-1.5 transition-colors"
+          className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs flex items-center gap-2 shadow-md transition-all active:scale-95"
         >
           <RotateCcw className="w-4 h-4" />
           Try Another File / Re-upload
@@ -78,3 +78,4 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({ error, onReset }) => {
     </div>
   );
 };
+

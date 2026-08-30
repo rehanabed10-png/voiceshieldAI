@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Sliders, User, DollarSign, AlertOctagon, ChevronDown, ChevronUp, Zap } from "lucide-react";
+import { Sliders, User, DollarSign, AlertOctagon, ChevronDown, ChevronUp, Zap, ShieldAlert } from "lucide-react";
 import { CallContextState, EnrolledSpeaker } from "../types";
 
 interface ContextFormProps {
@@ -67,42 +67,42 @@ export const ContextForm: React.FC<ContextFormProps> = ({
   };
 
   return (
-    <div id="context-configuration-panel" className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+    <div id="context-configuration-panel" className="glass-card rounded-2xl p-5 space-y-4">
       {/* Header with toggle and presets */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <button
           type="button"
           id="toggle-context-form-btn"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 text-left hover:text-slate-200 transition-colors"
+          className="flex items-center gap-3 text-left hover:opacity-90 transition-opacity"
         >
-          <div className="w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+          <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 shadow-sm">
             <Sliders className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-              Contextual Fraud Signals & Biometric Parameters
+            <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              Contextual Anti-Fraud Signals & Biometric Parameters
               {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
             </div>
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-slate-500">
               {context.speaker_id || context.claimed_role || context.requested_transaction_amount
-                ? `Active: ${context.speaker_id ? `Speaker [${context.speaker_id}]` : ""}${context.claimed_role ? ` • Role [${context.claimed_role}]` : ""}${context.requested_transaction_amount ? ` • $${context.requested_transaction_amount}` : ""}`
-                : "Configure claimed speaker identity, authority role, and financial transaction spikes."}
+                ? `Configured: ${context.speaker_id ? `Speaker [${context.speaker_id}]` : ""}${context.claimed_role ? ` • Role [${context.claimed_role}]` : ""}${context.requested_transaction_amount ? ` • $${context.requested_transaction_amount}` : ""}`
+                : "Optionally specify claimed speaker identity, authority role, and financial amounts for composite risk assessment."}
             </div>
           </div>
         </button>
 
         {/* Quick Simulation Preset Buttons */}
         <div className="flex items-center gap-1.5 self-start sm:self-center flex-wrap">
-          <span className="text-[11px] text-slate-500 flex items-center gap-1">
-            <Zap className="w-3 h-3 text-amber-400" />
+          <span className="text-[11px] text-slate-500 flex items-center gap-1 font-semibold">
+            <Zap className="w-3 h-3 text-amber-500" />
             Presets:
           </span>
           <button
             type="button"
             onClick={() => applyPreset("ceo_fraud")}
             disabled={disabled}
-            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-amber-300 border border-amber-500/30 transition-colors"
+            className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-[11px] font-semibold text-amber-700 border border-amber-500/30 transition-colors"
           >
             CEO Impersonation
           </button>
@@ -110,7 +110,7 @@ export const ContextForm: React.FC<ContextFormProps> = ({
             type="button"
             onClick={() => applyPreset("normal_call")}
             disabled={disabled}
-            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-emerald-300 border border-emerald-500/30 transition-colors"
+            className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-[11px] font-semibold text-emerald-700 border border-emerald-500/30 transition-colors"
           >
             Normal Call
           </button>
@@ -119,13 +119,13 @@ export const ContextForm: React.FC<ContextFormProps> = ({
 
       {/* Expandable Form Body */}
       {isExpanded && (
-        <div className="pt-3 border-t border-slate-800 space-y-4 text-xs">
+        <div className="pt-4 border-t border-slate-200/80 space-y-4 text-xs">
           
           {/* Row 1: Speaker Selection & Verification Threshold */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label htmlFor="context-speaker-id" className="font-medium text-slate-300 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-cyan-400" />
+              <label htmlFor="context-speaker-id" className="font-semibold text-slate-800 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-blue-600" />
                 Claimed Speaker ID (Phase 5 Biometrics):
               </label>
               <div className="flex gap-2">
@@ -136,17 +136,17 @@ export const ContextForm: React.FC<ContextFormProps> = ({
                   value={context.speaker_id}
                   onChange={(e) => onChange({ speaker_id: e.target.value })}
                   disabled={disabled}
-                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  className="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
                 />
                 {enrolledSpeakers.length > 0 && (
                   <select
                     id="select-enrolled-speaker"
                     onChange={(e) => e.target.value && onChange({ speaker_id: e.target.value })}
                     disabled={disabled}
-                    className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-slate-300 text-xs focus:outline-none"
+                    className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-700 text-xs focus:outline-none shadow-sm"
                     value=""
                   >
-                    <option value="" disabled>Select Enrolled</option>
+                    <option value="" disabled>Select Profile</option>
                     {enrolledSpeakers.map((s) => (
                       <option key={s.speaker_id} value={s.speaker_id}>
                         {s.speaker_id} {s.speaker_name ? `(${s.speaker_name})` : ""}
@@ -162,10 +162,10 @@ export const ContextForm: React.FC<ContextFormProps> = ({
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label htmlFor="context-threshold-slider" className="font-medium text-slate-300">
-                  Verification Threshold ($\tau$):
+                <label htmlFor="context-threshold-slider" className="font-semibold text-slate-800">
+                  Verification Threshold (τ):
                 </label>
-                <span className="font-mono text-emerald-400 font-bold">
+                <span className="font-mono text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                   {context.verification_threshold.toFixed(2)}
                 </span>
               </div>
@@ -178,9 +178,9 @@ export const ContextForm: React.FC<ContextFormProps> = ({
                 value={context.verification_threshold}
                 onChange={(e) => onChange({ verification_threshold: parseFloat(e.target.value) })}
                 disabled={disabled}
-                className="w-full accent-emerald-500"
+                className="w-full accent-blue-600"
               />
-              <div className="flex justify-between text-[10px] text-slate-500">
+              <div className="flex justify-between text-[10px] font-mono text-slate-500">
                 <span>0.50 (Relaxed)</span>
                 <span>0.70 (Standard Default)</span>
                 <span>0.95 (Strict High-Sec)</span>
@@ -191,7 +191,7 @@ export const ContextForm: React.FC<ContextFormProps> = ({
           {/* Row 2: Authority Role & Financial Amounts */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1.5">
-              <label htmlFor="context-claimed-role" className="font-medium text-slate-300">
+              <label htmlFor="context-claimed-role" className="font-semibold text-slate-800">
                 Claimed Authority Role:
               </label>
               <input
@@ -201,13 +201,13 @@ export const ContextForm: React.FC<ContextFormProps> = ({
                 value={context.claimed_role}
                 onChange={(e) => onChange({ claimed_role: e.target.value })}
                 disabled={disabled}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="context-requested-amount" className="font-medium text-slate-300 flex items-center gap-1">
-                <DollarSign className="w-3.5 h-3.5 text-amber-400" />
+              <label htmlFor="context-requested-amount" className="font-semibold text-slate-800 flex items-center gap-1">
+                <DollarSign className="w-3.5 h-3.5 text-amber-600" />
                 Requested Amount ($):
               </label>
               <input
@@ -217,12 +217,12 @@ export const ContextForm: React.FC<ContextFormProps> = ({
                 value={context.requested_transaction_amount}
                 onChange={(e) => onChange({ requested_transaction_amount: e.target.value })}
                 disabled={disabled}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="context-normal-amount" className="font-medium text-slate-300">
+              <label htmlFor="context-normal-amount" className="font-semibold text-slate-800">
                 Normal Baseline ($):
               </label>
               <input
@@ -232,7 +232,7 @@ export const ContextForm: React.FC<ContextFormProps> = ({
                 value={context.normal_transaction_amount}
                 onChange={(e) => onChange({ normal_transaction_amount: e.target.value })}
                 disabled={disabled}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
               />
             </div>
           </div>
@@ -240,8 +240,8 @@ export const ContextForm: React.FC<ContextFormProps> = ({
           {/* Row 3: Caller Status & Urgency */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
             <div className="space-y-1.5">
-              <label htmlFor="context-caller-id" className="font-medium text-slate-300">
-                Caller Phone / ID:
+              <label htmlFor="context-caller-id" className="font-semibold text-slate-800">
+                Caller Phone / ANI:
               </label>
               <input
                 id="context-caller-id"
@@ -250,31 +250,31 @@ export const ContextForm: React.FC<ContextFormProps> = ({
                 value={context.caller_id}
                 onChange={(e) => onChange({ caller_id: e.target.value })}
                 disabled={disabled}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 placeholder-slate-400 focus:outline-none shadow-sm"
               />
             </div>
 
-            <div className="flex items-center gap-4 pt-6">
-              <label className="flex items-center gap-2 cursor-pointer">
+            <div className="flex items-center gap-4 pt-5">
+              <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
                 <input
                   type="checkbox"
                   checked={context.is_caller_recognized}
                   onChange={(e) => onChange({ is_caller_recognized: e.target.checked })}
                   disabled={disabled}
-                  className="rounded border-slate-700 text-emerald-500 focus:ring-0"
+                  className="rounded border-slate-300 text-blue-600 focus:ring-0"
                 />
-                <span className="text-slate-300">Recognized Contact</span>
+                <span>Recognized Contact</span>
               </label>
 
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer font-medium">
                 <input
                   type="checkbox"
                   checked={context.is_urgent}
                   onChange={(e) => onChange({ is_urgent: e.target.checked })}
                   disabled={disabled}
-                  className="rounded border-slate-700 text-amber-500 focus:ring-0"
+                  className="rounded border-slate-300 text-amber-600 focus:ring-0"
                 />
-                <span className="text-amber-400 flex items-center gap-1 font-medium">
+                <span className="text-amber-700 flex items-center gap-1">
                   <AlertOctagon className="w-3.5 h-3.5" />
                   Urgency Pressure
                 </span>
@@ -282,7 +282,7 @@ export const ContextForm: React.FC<ContextFormProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="context-transcript" className="font-medium text-slate-300">
+              <label htmlFor="context-transcript" className="font-semibold text-slate-800">
                 Transcript Snippet:
               </label>
               <input
@@ -292,7 +292,7 @@ export const ContextForm: React.FC<ContextFormProps> = ({
                 value={context.transcript_text}
                 onChange={(e) => onChange({ transcript_text: e.target.value })}
                 disabled={disabled}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 placeholder-slate-400 focus:outline-none shadow-sm"
               />
             </div>
           </div>
@@ -302,3 +302,4 @@ export const ContextForm: React.FC<ContextFormProps> = ({
     </div>
   );
 };
+

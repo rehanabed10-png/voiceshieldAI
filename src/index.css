@@ -1,1 +1,180 @@
 @import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #f7f9fb;
+    color: #191c1e;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Ambient Background Blobs */
+@keyframes blob-float-1 {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes blob-float-2 {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-40px, 40px) scale(1.15); }
+  100% { transform: translate(30px, -30px) scale(0.85); }
+}
+
+.blob {
+  position: fixed;
+  filter: blur(90px);
+  z-index: 0;
+  opacity: 0.55;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.blob-1 {
+  top: -10%;
+  left: -5%;
+  width: 48vw;
+  height: 48vw;
+  background: radial-gradient(circle, rgba(173, 198, 255, 0.75) 0%, rgba(173, 198, 255, 0) 70%);
+  animation: blob-float-1 22s infinite ease-in-out alternate;
+}
+
+.blob-2 {
+  bottom: -15%;
+  right: -5%;
+  width: 52vw;
+  height: 52vw;
+  background: radial-gradient(circle, rgba(111, 251, 190, 0.45) 0%, rgba(111, 251, 190, 0) 70%);
+  animation: blob-float-2 26s infinite ease-in-out alternate;
+}
+
+.blob-3 {
+  top: 35%;
+  left: 35%;
+  width: 35vw;
+  height: 35vw;
+  background: radial-gradient(circle, rgba(218, 226, 253, 0.65) 0%, rgba(218, 226, 253, 0) 70%);
+  animation: blob-float-1 18s infinite ease-in-out alternate-reverse;
+}
+
+.blob-error {
+  top: 20%;
+  right: 15%;
+  width: 40vw;
+  height: 40vw;
+  background: radial-gradient(circle, rgba(255, 218, 214, 0.6) 0%, rgba(255, 218, 214, 0) 70%);
+  animation: blob-float-2 16s infinite ease-in-out alternate;
+}
+
+/* Liquid Glass Cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.03);
+  border-color: rgba(255, 255, 255, 0.85);
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.06);
+}
+
+.glass-panel-darker {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 4px 16px 0 rgba(31, 38, 135, 0.04);
+}
+
+.glass-error {
+  background: rgba(255, 240, 240, 0.8);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(186, 26, 26, 0.25);
+  box-shadow: 0 8px 32px 0 rgba(186, 26, 26, 0.08);
+}
+
+.glass-nav {
+  background: rgba(247, 249, 251, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-right: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.glass-top-nav {
+  background: rgba(247, 249, 251, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+/* Radar Sweep Animation */
+.radar-sweep {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  background: conic-gradient(from 0deg, transparent 70%, rgba(0, 88, 190, 0.45) 100%);
+  transform-origin: 0 0;
+  animation: sweep 2.2s linear infinite;
+  border-radius: 50%;
+}
+
+@keyframes sweep {
+  to { transform: rotate(360deg); }
+}
+
+.pulse-ring {
+  animation: pulse-ring 2.2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+.pulse-border-threat {
+  animation: pulse-threat 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-threat {
+  0%, 100% {
+    border-color: rgba(186, 26, 26, 0.3);
+    box-shadow: 0 0 10px rgba(186, 26, 26, 0.1);
+  }
+  50% {
+    border-color: rgba(186, 26, 26, 0.8);
+    box-shadow: 0 0 20px rgba(186, 26, 26, 0.35);
+  }
+}
+
+/* Waveform Bars */
+.waveform-bar {
+  width: 3.5px;
+  background-color: #3B82F6;
+  border-radius: 2px;
+  display: inline-block;
+  margin: 0 1.5px;
+  transition: height 0.15s ease;
+}
+
