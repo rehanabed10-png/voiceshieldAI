@@ -433,7 +433,7 @@ async function persistAnalysisToSupabase(
       speaker_mismatch_flag:
         typeof resultData.speaker_verification?.speaker_mismatch_flag === "number"
           ? resultData.speaker_verification.speaker_mismatch_flag
-          : null,
+          : (resultData.risk_signals?.speaker_mismatch ?? 0),
       acoustic_anomaly: acousticAnomalyBool,
       caller_recognized: typeof params.is_caller_recognized === "boolean" ? params.is_caller_recognized : null,
       previously_flagged: typeof params.is_previously_flagged === "boolean" ? params.is_previously_flagged : null,

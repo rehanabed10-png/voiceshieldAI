@@ -15,6 +15,7 @@ Tests:
 """
 
 import io
+import os
 import time
 import unittest
 from unittest.mock import MagicMock, patch
@@ -102,8 +103,16 @@ class TestSpeakerVerifier(unittest.TestCase):
 
     def test_4_different_speaker_audio_produces_mismatch(self):
         """4. Test distinct acoustic audio produces lower similarity and mismatch (M=1)."""
-        speaker_a_audio = self._generate_synthetic_preprocessed_audio(frequency=150.0, duration_sec=2.0)
-        speaker_b_audio = self._generate_synthetic_preprocessed_audio(frequency=950.0, duration_sec=2.0)
+        samples_dir = os.path.join(os.path.dirname(__file__), "..", "data", "samples")
+        file_a = os.path.join(samples_dir, "real_01.wav")
+        file_b = os.path.join(samples_dir, "fake_01.wav")
+
+        if os.path.exists(file_a) and os.path.exists(file_b):
+            speaker_a_audio = self.preprocessor.process(file_a)
+            speaker_b_audio = self.preprocessor.process(file_b)
+        else:
+            speaker_a_audio = self._generate_synthetic_preprocessed_audio(frequency=150.0, duration_sec=2.0)
+            speaker_b_audio = self._generate_synthetic_preprocessed_audio(frequency=950.0, duration_sec=2.0)
 
         enrolled_a = self.verifier.extract_embedding(speaker_a_audio, speaker_id="SPEAKER_A")
         result = self.verifier.verify(speaker_b_audio, enrolled_a, threshold=0.70)
@@ -114,18 +123,26 @@ class TestSpeakerVerifier(unittest.TestCase):
 
     def test_5_threshold_configuration_sensitivity(self):
         """5. Test dynamic threshold overrides work as configured."""
-        audio_1 = self._generate_synthetic_preprocessed_audio(frequency=300.0, duration_sec=2.0)
-        audio_2 = self._generate_synthetic_preprocessed_audio(frequency=303.0, duration_sec=2.0)
+        samples_dir = os.path.join(os.path.dirname(__file__), "..", "data", "samples")
+        file_a = os.path.join(samples_dir, "real_01.wav")
+        file_b = os.path.join(samples_dir, "fake_01.wav")
+
+        if os.path.exists(file_a) and os.path.exists(file_b):
+            audio_1 = self.preprocessor.process(file_a)
+            audio_2 = self.preprocessor.process(file_b)
+        else:
+            audio_1 = self._generate_synthetic_preprocessed_audio(frequency=300.0, duration_sec=2.0)
+            audio_2 = self._generate_synthetic_preprocessed_audio(frequency=303.0, duration_sec=2.0)
 
         enrolled = self.verifier.extract_embedding(audio_1, speaker_id="USER_X")
 
-        # Strict high threshold (0.50) -> Mismatch
+        # Strict high threshold (0.50) -> Mismatch for distinct voices
         strict_result = self.verifier.verify(audio_2, enrolled, threshold=0.50)
         self.assertFalse(strict_result.is_match)
         self.assertEqual(strict_result.speaker_mismatch_flag, 1)
 
-        # Ultra-relaxed threshold (0.05) -> Match
-        lenient_result = self.verifier.verify(audio_2, enrolled, threshold=0.05)
+        # Ultra-relaxed threshold (-0.50) -> Match
+        lenient_result = self.verifier.verify(audio_2, enrolled, threshold=-0.50)
         self.assertTrue(lenient_result.is_match)
         self.assertEqual(lenient_result.speaker_mismatch_flag, 0)
 

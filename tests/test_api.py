@@ -112,18 +112,18 @@ class TestVoiceShieldFastAPIIntegration(unittest.TestCase):
         response = self.client.post("/enroll", files=files, data=data)
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["status"], "RECEIVED")
+        self.assertEqual(payload["status"], "ENROLLED")
         self.assertEqual(payload["speaker_id"], "USER-4401")
 
     def test_7_post_verify_speaker(self):
-        """7. Test POST /verify-speaker acknowledges Phase 5 deferral."""
+        """7. Test POST /verify-speaker verifies enrolled speaker."""
         wav_bytes = self._create_synthetic_wav_bytes(duration_sec=1.5)
         files = {"file": ("verify.wav", io.BytesIO(wav_bytes), "audio/wav")}
         data = {"speaker_id": "USER-4401"}
         response = self.client.post("/verify-speaker", files=files, data=data)
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["status"], "DEFERRED_PHASE_5")
+        self.assertEqual(payload["status"], "SUCCESS")
 
 
 class TestVoiceShieldAPIContracts(unittest.TestCase):
