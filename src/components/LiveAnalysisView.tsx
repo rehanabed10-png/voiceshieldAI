@@ -536,12 +536,12 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                     </span>
                     <span
                       className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-full ${
-                        latestResult.response.speaker_verification.match
+                        latestResult.response.speaker_verification.is_match
                           ? "bg-emerald-100 text-emerald-700"
                           : "bg-red-100 text-red-700"
                       }`}
                     >
-                      {latestResult.response.speaker_verification.match ? "MATCH" : "MISMATCH"}
+                      {latestResult.response.speaker_verification.is_match ? "MATCH" : "MISMATCH"}
                     </span>
                   </>
                 ) : (
@@ -767,7 +767,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
               </div>
               <div className="text-slate-600 font-mono text-[11px]">
                 <div>P(Fake): {(activeInspect.response.deepfake_detection.fake_probability * 100).toFixed(2)}%</div>
-                <div>Model: {activeInspect.response.deepfake_detection.model_used.split("/").pop()}</div>
+                <div>Model: {(activeInspect.response.deepfake_detection.model_id || activeInspect.response.deepfake_detection.model_type || "Wav2Vec2").split("/").pop()}</div>
                 <div>Inference Time: {activeInspect.response.deepfake_detection.inference_time_ms} ms</div>
               </div>
             </div>
@@ -778,7 +778,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                 <span>Biometric Verification</span>
                 {activeInspect.response.speaker_verification ? (
                   <span className="font-mono text-blue-600 font-bold">
-                    {activeInspect.response.speaker_verification.match ? "VERIFIED" : "MISMATCH"}
+                    {activeInspect.response.speaker_verification.is_match ? "VERIFIED" : "MISMATCH"}
                   </span>
                 ) : (
                   <span className="text-slate-400 font-normal">None</span>

@@ -19,10 +19,28 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB limit
 });
 
+// Helper function to resolve Python executable from project venv
+function getPythonExecutable(): string {
+  if (process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH)) {
+    return process.env.PYTHON_PATH;
+  }
+  const venvWindows = path.join(process.cwd(), "venv", "Scripts", "python.exe");
+  const venvUnix = path.join(process.cwd(), "venv", "bin", "python");
+  const dotVenvWindows = path.join(process.cwd(), ".venv", "Scripts", "python.exe");
+  const dotVenvUnix = path.join(process.cwd(), ".venv", "bin", "python");
+
+  if (fs.existsSync(venvWindows)) return venvWindows;
+  if (fs.existsSync(venvUnix)) return venvUnix;
+  if (fs.existsSync(dotVenvWindows)) return dotVenvWindows;
+  if (fs.existsSync(dotVenvUnix)) return dotVenvUnix;
+
+  return process.platform === "win32" ? "python" : "python3";
+}
+
 // Helper function to execute the Python pipeline CLI runner
 function runPythonPipeline(args: string[]): Promise<{ status: number; data: any }> {
   return new Promise((resolve) => {
-    const pythonCmd = "python3";
+    const pythonCmd = getPythonExecutable();
     const scriptPath = path.join(process.cwd(), "scripts", "run_pipeline.py");
     const fullArgs = [scriptPath, ...args];
 
