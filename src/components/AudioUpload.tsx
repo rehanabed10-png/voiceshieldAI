@@ -140,10 +140,10 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onClick={() => !isProcessing && fileInputRef.current?.click()}
-            className={`glass-card relative border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[300px] ${
+            className={`glass-card specular-top relative border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[290px] ${
               isDragging
-                ? "border-blue-500 bg-blue-500/10 shadow-xl"
-                : "border-slate-300/80 hover:border-blue-500/60 hover:bg-white/80"
+                ? "border-blue-400 bg-blue-500/20 shadow-2xl scale-[1.01]"
+                : "border-white/15 hover:border-blue-400/60 hover:bg-white/5"
             }`}
           >
             <input
@@ -156,33 +156,33 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
               id="audio-file-input"
             />
 
-            <div className="w-20 h-20 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 mb-4 shadow-sm backdrop-blur-md">
-              <Upload className="w-9 h-9" />
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-600/30 to-indigo-600/30 border border-blue-400/30 flex items-center justify-center text-blue-300 mb-4 shadow-lg backdrop-blur-md">
+              <Upload className="w-9 h-9 text-blue-300" />
             </div>
 
-            <h2 className="text-xl font-bold text-slate-900 mb-2">
-              Upload Audio Payload for AI Analysis
+            <h2 className="text-lg sm:text-xl font-bold text-white mb-2">
+              Upload Audio Payload for AI Forensic Inspection
             </h2>
-            <p className="text-sm text-slate-500 max-w-md mx-auto mb-6">
-              Drag and drop an audio file here, or click to browse. Resampled to 16 kHz Mono automatically for neural feature extraction.
+            <p className="text-xs sm:text-sm text-slate-300 max-w-md mx-auto mb-6">
+              Drag and drop an audio file here, or click to browse. Standardized to 16 kHz Mono in-memory for deep neural feature extraction.
             </p>
 
             <button
               type="button"
-              className="bg-slate-900 text-white text-sm font-semibold py-2.5 px-6 rounded-xl shadow-md hover:bg-slate-800 transition-all flex items-center gap-2"
+              className="bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold py-2.5 px-6 rounded-xl shadow-lg shadow-blue-500/25 transition-all flex items-center gap-2 squish-btn"
             >
               <Upload className="w-4 h-4" />
               Browse Files
             </button>
 
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-xs font-mono text-slate-500">
-              <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200">
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-xs font-mono text-slate-400">
+              <span className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10">
                 WAV &bull; FLAC &bull; MP3 &bull; OGG
               </span>
-              <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200">
-                0.5s – 30.0s Duration
+              <span className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10">
+                0.5s – 30.0s Window
               </span>
-              <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200">
+              <span className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-blue-300">
                 16 kHz Standardized
               </span>
             </div>
@@ -190,25 +190,25 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
 
           {/* Bento Compliance & Latency Cards (From Stitch Empty State) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="glass-card rounded-xl p-4 flex items-start gap-3.5">
-              <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 shrink-0">
+            <div className="glass-card rounded-xl p-4 flex items-start gap-3.5 border border-white/10">
+              <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">Zero Retention & Security</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Raw audio streams are processed in-memory and purged immediately. Only mathematical embeddings are stored.
+                <h3 className="text-sm font-semibold text-white">Zero Retention & Security</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Raw audio streams are processed in-memory and purged immediately. Only 192-D mathematical embeddings are persisted.
                 </p>
               </div>
             </div>
 
-            <div className="glass-card rounded-xl p-4 flex items-start gap-3.5">
-              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 shrink-0">
+            <div className="glass-card rounded-xl p-4 flex items-start gap-3.5 border border-white/10">
+              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
                 <Zap className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">Millisecond Latency</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <h3 className="text-sm font-semibold text-white">Sub-400ms Verification</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
                   Lightweight ECAPA-TDNN and Wav2Vec2 pipelines produce verifiable fraud confidence assessments in under 400ms.
                 </p>
               </div>
@@ -217,34 +217,34 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
         </div>
       ) : (
         /* Selected Audio Card with Stitch Liquid Glass Waveform & Player */
-        <div id="selected-audio-card" className="glass-card rounded-2xl p-6 space-y-5">
+        <div id="selected-audio-card" className="glass-card rounded-2xl p-6 space-y-5 border border-white/10 shadow-xl">
           {/* Header Strip */}
-          <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-4">
+          <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
             <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shrink-0">
-                <FileAudio className="w-6 h-6" />
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0 border border-white/20">
+                <FileAudio className="w-6 h-6 text-emerald-300" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900 truncate max-w-sm sm:max-w-md">
+                <h3 className="text-base font-bold text-white truncate max-w-sm sm:max-w-md">
                   {sampleName || selectedFile.name}
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                  <span>{formatFileSize(selectedFile.size)}</span>
+                <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
+                  <span className="font-mono">{formatFileSize(selectedFile.size)}</span>
                   <span>&bull;</span>
-                  <span className="text-blue-600 font-medium font-mono">Ready for Neural Ingestion</span>
+                  <span className="text-blue-400 font-medium font-mono">Ready for Neural Ingestion</span>
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <div className="bg-white/80 px-3 py-1 rounded-full border border-slate-200 text-xs font-mono text-slate-700 shadow-sm">
+              <div className="bg-slate-900/80 px-3 py-1.5 rounded-xl border border-white/10 text-xs font-mono text-slate-300 shadow-inner">
                 {formatTime(currentTime)} / {formatTime(duration || 3.0)}
               </div>
               <button
                 id="clear-audio-btn"
                 onClick={onClear}
                 disabled={isProcessing}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
                 title="Remove selected file"
               >
                 <X className="w-5 h-5" />
@@ -253,7 +253,7 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
           </div>
 
           {/* Stitch Waveform Visualizer Area (Dark Slate with Cyber-Blue Bars) */}
-          <div className="bg-[#0F172A] rounded-xl p-5 flex flex-col justify-between relative overflow-hidden h-52 border border-slate-800 shadow-inner">
+          <div className="bg-[#081320] rounded-xl p-5 flex flex-col justify-between relative overflow-hidden h-52 border border-slate-700/60 shadow-inner">
             {audioUrl && (
               <audio
                 ref={audioRef}
@@ -278,9 +278,9 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
                     className="waveform-bar"
                     style={{
                       height: `${height}%`,
-                      backgroundColor: isPassed ? "#3B82F6" : "#334155",
+                      backgroundColor: isPassed ? "#38bdf8" : "#1e293b",
                       opacity: isPassed ? 1 : 0.45,
-                      boxShadow: isPassed && isPlaying ? "0 0 8px rgba(59, 130, 246, 0.6)" : "none",
+                      boxShadow: isPassed && isPlaying ? "0 0 8px rgba(56, 189, 248, 0.7)" : "none",
                     }}
                   />
                 );
@@ -289,16 +289,16 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
 
             {/* Playhead Line */}
             <div
-              className="absolute top-0 bottom-0 w-[2px] bg-blue-400 pointer-events-none transition-all duration-100 shadow-[0_0_10px_rgba(59,130,246,0.9)]"
+              className="absolute top-0 bottom-0 w-[2px] bg-cyan-400 pointer-events-none transition-all duration-100 shadow-[0_0_12px_rgba(56,189,248,0.9)]"
               style={{ left: `${Math.max(2, Math.min(98, playProgressPercent))}%` }}
             />
 
             {/* Player Controls Bar */}
-            <div className="flex items-center gap-4 bg-slate-900/80 backdrop-blur-md p-2.5 rounded-lg border border-slate-700/50 shadow-md mt-2">
+            <div className="flex items-center gap-4 bg-slate-900/90 backdrop-blur-md p-2.5 rounded-xl border border-white/10 shadow-md mt-2">
               <button
                 id="toggle-playback-btn"
                 onClick={togglePlayback}
-                className="w-9 h-9 rounded-full bg-white text-slate-950 flex items-center justify-center hover:bg-slate-100 transition-transform active:scale-95 shrink-0 shadow-sm"
+                className="w-9 h-9 rounded-full bg-white text-slate-950 flex items-center justify-center hover:bg-slate-200 transition-transform active:scale-95 shrink-0 shadow-md squish-btn"
               >
                 {isPlaying ? (
                   <Pause className="w-4 h-4 fill-current text-slate-950" />
@@ -321,7 +321,7 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
                 }}
               >
                 <div
-                  className="absolute left-0 top-0 bottom-0 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]"
+                  className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full shadow-[0_0_8px_rgba(56,189,248,0.6)]"
                   style={{ width: `${playProgressPercent}%` }}
                 />
               </div>
@@ -336,13 +336,13 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
 
       {/* Preset Test Samples Strip */}
       {samples.length > 0 && (
-        <div id="test-samples-container" className="glass-card rounded-2xl p-5 space-y-3">
+        <div id="test-samples-container" className="glass-card rounded-2xl p-5 space-y-3 border border-white/10">
           <div className="flex items-center justify-between text-xs">
-            <span className="flex items-center gap-1.5 font-bold text-slate-800">
-              <Music className="w-4 h-4 text-blue-600" />
+            <span className="flex items-center gap-1.5 font-bold text-white">
+              <Music className="w-4 h-4 text-blue-400" />
               Quick Test Audio Samples (Zero Configuration):
             </span>
-            <span className="text-[11px] text-slate-500 hidden sm:inline">
+            <span className="text-[11px] text-slate-400 hidden sm:inline font-mono">
               Click to load test audio payload
             </span>
           </div>
@@ -360,20 +360,20 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
                   id={`sample-btn-${s.filename.replace(/\W/g, "-")}`}
                   onClick={() => onSelectSample(s)}
                   disabled={isProcessing}
-                  className="flex items-start gap-2.5 p-3 rounded-xl bg-white/70 border border-white/80 hover:bg-white hover:border-blue-400 hover:shadow-sm transition-all text-left group"
+                  className="flex items-start gap-2.5 p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-blue-400/50 hover:shadow-md transition-all text-left group squish-btn"
                 >
                   <div className="mt-0.5 shrink-0">
                     {isValid ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     ) : (
-                      <AlertCircle className="w-4 h-4 text-amber-600" />
+                      <AlertCircle className="w-4 h-4 text-amber-400" />
                     )}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-semibold text-slate-800 group-hover:text-blue-700 truncate">
+                    <div className="text-xs font-semibold text-slate-200 group-hover:text-blue-300 truncate">
                       {s.filename}
                     </div>
-                    <div className="text-[11px] text-slate-500 font-mono line-clamp-1">
+                    <div className="text-[11px] text-slate-400 font-mono line-clamp-1">
                       {isValid
                         ? "3.0s Speech (Valid)"
                         : isShort
@@ -394,4 +394,5 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
     </div>
   );
 };
+
 

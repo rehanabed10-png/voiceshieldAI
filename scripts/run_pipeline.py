@@ -48,8 +48,9 @@ from app.models.speaker_verifier import (
     PretrainedECAPASpeakerVerifier,
     SpeakerEmbedding,
 )
-from app.risk.context import CallContext
+from app.risk.context import CallContext, resolve_speech_profile
 from app.risk.scoring import VoiceShieldRiskEngine
+from app.risk.verification import SecondaryVerificationStateMachine
 
 def extract_call_context(args: dict) -> CallContext:
     """
@@ -87,9 +88,17 @@ def extract_call_context(args: dict) -> CallContext:
         if isinstance(is_flagged, str):
             is_flagged = is_flagged.lower() == "true"
 
-        role_mis = raw_context.get("role_mismatch", False)
-        if isinstance(role_mis, str):
-            role_mis = role_mis.lower() == "true"
+        claimed_role = raw_context.get("claimed_role") or args.get("claimed_role")
+
+        if "role_mismatch" in raw_context:
+            role_mis = raw_context.get("role_mismatch")
+            if isinstance(role_mis, str):
+                role_mis = role_mis.lower() == "true"
+        else:
+            if claimed_role and contact_role and str(claimed_role).strip().lower() != str(contact_role).strip().lower():
+                role_mis = True
+            else:
+                role_mis = False
 
         has_fraud_hist = raw_context.get("has_prior_fraud_history", False)
         if isinstance(has_fraud_hist, str):
@@ -100,6 +109,18 @@ def extract_call_context(args: dict) -> CallContext:
 
         hold_amt = raw_context.get("transaction_auto_hold_amount")
         hold_amt_val = float(hold_amt) if hold_amt is not None and str(hold_amt).strip() != "" else None
+
+        # Authoritative Organization Policy extraction (Feature 3)
+        policy = raw_context.get("policy") if isinstance(raw_context.get("policy"), dict) else {}
+        fake_crit_val = float(policy.get("fake_prob_critical_threshold", 0.85))
+        fake_warn_val = float(policy.get("fake_prob_warn_threshold", 0.50))
+        spk_strict_val = float(policy.get("speaker_verification_strictness", 0.65))
+        acoust_sens_val = float(policy.get("acoustic_anomaly_sensitivity", 0.70))
+        step_up_val = bool(policy.get("step_up_verification_required", True))
+        auto_block_val = bool(policy.get("auto_block_on_critical_deepfake", True))
+
+        if policy.get("transaction_auto_hold_amount") is not None and str(policy.get("transaction_auto_hold_amount")).strip() != "":
+            hold_amt_val = float(policy.get("transaction_auto_hold_amount"))
 
         # User/Session intent fields (can fallback to args if not in raw_context)
         caller_id = raw_context.get("caller_id") or args.get("caller_id")
@@ -137,6 +158,25 @@ def extract_call_context(args: dict) -> CallContext:
         transcript = raw_context.get("transcript_text") or args.get("transcript_text")
         susp_keys = raw_context.get("suspicious_keywords_found") or args.get("suspicious_keywords_found", []) or []
 
+        # Multilingual / Indian Speech Metadata (Non-Authoritative)
+        sel_lang = (
+            raw_context.get("selected_language")
+            or raw_context.get("language")
+            or args.get("selected_language")
+            or args.get("language")
+            or "Auto Detect"
+        )
+        det_lang = raw_context.get("detected_language") or args.get("detected_language")
+        lang_conf = raw_context.get("language_confidence") or args.get("language_confidence")
+        lang_conf_val = float(lang_conf) if lang_conf is not None and str(lang_conf).strip() != "" else None
+        accent_reg = (
+            raw_context.get("accent_region")
+            or raw_context.get("accent_profile")
+            or args.get("accent_region")
+            or args.get("accent_profile")
+        )
+        trans_lang = raw_context.get("transcript_language") or args.get("transcript_language")
+
         return CallContext(
             caller_id=caller_id,
             is_caller_recognized=bool(is_recog),
@@ -162,6 +202,19 @@ def extract_call_context(args: dict) -> CallContext:
             recent_fraud_types=fraud_types,
             context_source=context_source,
             context_available=context_available,
+            fake_prob_critical_threshold=fake_crit_val,
+            fake_prob_warn_threshold=fake_warn_val,
+            speaker_verification_strictness=spk_strict_val,
+            acoustic_anomaly_sensitivity=acoust_sens_val,
+            step_up_verification_required=step_up_val,
+            auto_block_on_critical_deepfake=auto_block_val,
+            selected_language=sel_lang,
+            language=raw_context.get("language") or args.get("language") or sel_lang,
+            detected_language=det_lang,
+            language_confidence=lang_conf_val,
+            accent_region=accent_reg,
+            accent_profile=accent_reg,
+            transcript_language=trans_lang,
         )
 
     # Legacy flat args fallback (only when no nested context was provided)
@@ -197,6 +250,13 @@ def extract_call_context(args: dict) -> CallContext:
     fraud_cnt = int(args.get("fraud_history_count", 0) or 0)
     fraud_types = args.get("recent_fraud_types", []) or []
 
+    sel_lang = args.get("selected_language") or args.get("language") or "Auto Detect"
+    det_lang = args.get("detected_language")
+    lang_conf = args.get("language_confidence")
+    lang_conf_val = float(lang_conf) if lang_conf is not None and str(lang_conf).strip() != "" else None
+    accent_reg = args.get("accent_region") or args.get("accent_profile")
+    trans_lang = args.get("transcript_language")
+
     return CallContext(
         caller_id=args.get("caller_id"),
         is_caller_recognized=bool(is_recog),
@@ -222,6 +282,13 @@ def extract_call_context(args: dict) -> CallContext:
         recent_fraud_types=fraud_types,
         context_source=args.get("context_source", "DEFAULT"),
         context_available=args.get("context_available", True),
+        selected_language=sel_lang,
+        language=args.get("language") or sel_lang,
+        detected_language=det_lang,
+        language_confidence=lang_conf_val,
+        accent_region=accent_reg,
+        accent_profile=accent_reg,
+        transcript_language=trans_lang,
     )
 
 
@@ -392,6 +459,12 @@ class PipelineWorker:
         else:
             acoustic_anomaly = prosody_result.acoustic_anomaly
 
+        call_context = extract_call_context(args)
+        effective_speaker_threshold = (
+            float(threshold) if threshold is not None and str(threshold).strip() != ""
+            else float(call_context.speaker_verification_strictness)
+        )
+
         self.sync_store()
         speaker_mismatch_signal = 0
         speaker_verification_status = "NOT_EVALUATED (No speaker_id supplied)"
@@ -411,7 +484,7 @@ class PipelineWorker:
                 ver_res = self.speaker_verifier.verify(
                     audio=preprocessed,
                     enrolled_embedding=enrolled,
-                    threshold=threshold,
+                    threshold=effective_speaker_threshold,
                 )
                 speaker_mismatch_signal = ver_res.speaker_mismatch_flag
                 speaker_verification_status = "EVALUATED (MATCH)" if ver_res.is_match else "EVALUATED (MISMATCH)"
@@ -448,10 +521,29 @@ class PipelineWorker:
 
         call_id = f"CALL-{uuid.uuid4().hex[:8].upper()}"
 
+        verification_session = SecondaryVerificationStateMachine.initialize_session(
+            call_id=call_id,
+            recommended_action=risk_assessment.recommended_action,
+            risk_score=risk_assessment.risk_score,
+            risk_level=risk_assessment.risk_level,
+            context=call_context,
+            flags=risk_assessment.flags,
+        )
+
+        speech_prof = resolve_speech_profile(
+            selected_language=call_context.selected_language or call_context.language,
+            detected_language=call_context.detected_language,
+            accent_region_override=call_context.accent_region or call_context.accent_profile,
+            transcript_text=call_context.transcript_text,
+        )
+
         return {
             "call_id": call_id,
             "risk_score": risk_assessment.risk_score,
             "risk_level": risk_assessment.risk_level,
+            "verification_session": verification_session.to_dict(),
+            "speech_profile": speech_prof,
+            "language_profile": speech_prof,
             "deepfake_detection": {
                 "prediction": prediction_result.prediction,
                 "fake_probability": round(prediction_result.fake_probability, 4),
@@ -617,9 +709,14 @@ class PipelineWorker:
         # 2. Deterministic Prosody & Acoustic Anomaly Analysis (single authoritative run)
         prosody_res = self.prosody_analyzer.analyze(preprocessed)
 
-        # 3. Speaker Biometric Verification (if enrolled)
+        # 3. Context & Speaker Biometric Verification (if enrolled)
+        call_context = extract_call_context(args)
         speaker_id = args.get("speaker_id")
         threshold = args.get("threshold")
+        effective_speaker_threshold = (
+            float(threshold) if threshold is not None and str(threshold).strip() != ""
+            else float(call_context.speaker_verification_strictness)
+        )
         self.sync_store()
         speaker_mismatch_signal = 0
         speaker_verification_status = "NOT_EVALUATED"
@@ -639,7 +736,7 @@ class PipelineWorker:
                 ver_res = self.speaker_verifier.verify(
                     audio=preprocessed,
                     enrolled_embedding=enrolled,
-                    threshold=threshold,
+                    threshold=effective_speaker_threshold,
                 )
                 speaker_mismatch_signal = ver_res.speaker_mismatch_flag
                 speaker_verification_status = "MATCH" if ver_res.is_match else "MISMATCH"
@@ -665,8 +762,6 @@ class PipelineWorker:
                 }
 
         # 4. Context & Risk Engine Fusion
-        call_context = extract_call_context(args)
-
         risk_assessment = self.risk_engine.evaluate(
             fake_probability=prediction_result.fake_probability,
             speaker_mismatch=speaker_mismatch_signal,
@@ -678,6 +773,22 @@ class PipelineWorker:
         total_latency_ms = (time.perf_counter() - start_time) * 1000.0
         call_id = args.get("call_id") or f"LIVE-{uuid.uuid4().hex[:6].upper()}"
 
+        verification_session = SecondaryVerificationStateMachine.initialize_session(
+            call_id=call_id,
+            recommended_action=risk_assessment.recommended_action,
+            risk_score=risk_assessment.risk_score,
+            risk_level=risk_assessment.risk_level,
+            context=call_context,
+            flags=risk_assessment.flags,
+        )
+
+        speech_prof = resolve_speech_profile(
+            selected_language=call_context.selected_language or call_context.language,
+            detected_language=call_context.detected_language,
+            accent_region_override=call_context.accent_region or call_context.accent_profile,
+            transcript_text=call_context.transcript_text,
+        )
+
         return {
             "call_id": call_id,
             "window_index": args.get("window_index", 0),
@@ -687,6 +798,9 @@ class PipelineWorker:
             "risk_score": risk_assessment.risk_score,
             "risk_level": risk_assessment.risk_level,
             "recommended_action": risk_assessment.recommended_action,
+            "verification_session": verification_session.to_dict(),
+            "speech_profile": speech_prof,
+            "language_profile": speech_prof,
             "flags": risk_assessment.flags,
             "prosody_reasons": prosody_res.anomaly_reasons,
             "prosody_metrics": {k: round(float(v), 4) for k, v in prosody_res.features.items()},

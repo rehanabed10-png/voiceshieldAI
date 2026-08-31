@@ -52,6 +52,7 @@ import {
 import { sliceAudioIntoWindows } from "../utils/audioChunker";
 import { analyzeAudio } from "../api";
 import { MicrophoneStreamer } from "../utils/microphoneStreamer";
+import { SecondaryVerificationPanel } from "./SecondaryVerificationPanel";
 
 interface LiveAnalysisViewProps {
   speakers: EnrolledSpeaker[];
@@ -375,24 +376,24 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
     <div id="live-analysis-container" className="space-y-6">
       
       {/* Top Banner: Mode Switcher & Stream Status */}
-      <div className="glass-card rounded-2xl p-5 border border-white/80 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-start gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 shrink-0 mt-0.5 shadow-sm">
-            {isMicMode ? <Mic className="w-5 h-5 animate-pulse text-blue-600" /> : <Radio className="w-5 h-5 animate-pulse text-blue-600" />}
+          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0 mt-0.5 shadow-sm">
+            {isMicMode ? <Mic className="w-5 h-5 animate-pulse text-purple-400" /> : <Radio className="w-5 h-5 animate-pulse text-cyan-400" />}
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base font-bold text-slate-900">
+              <h2 className="text-base font-bold text-white">
                 {isMicMode ? "True Live Microphone Analysis" : "Simulated Audio Slicing Stream"}
               </h2>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
                 {isMicMode ? "WebSocket /ws/live-stream (16kHz PCM16)" : "Sequential ~4.0s Windows"}
               </span>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
                 Wav2Vec2 + Prosody + ECAPA
               </span>
             </div>
-            <p className="text-xs text-slate-600 mt-1 max-w-2xl">
+            <p className="text-xs text-slate-400 mt-1 max-w-2xl font-mono">
               {isMicMode
                 ? "Captures live browser microphone audio, converts to 16 kHz PCM16 mono chunks, and streams to the persistent inference daemon over WebSockets with zero model re-loading."
                 : "Slices audio file into sequential 4-second evaluation windows and tracks deepfake, acoustic prosody anomaly, and biometric verification telemetry."}
@@ -402,17 +403,17 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
 
         {/* Mode Selector Pill & Global Stream Status */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
-          <div className="flex p-1 rounded-xl bg-slate-100/90 border border-slate-200/80 shadow-inner">
+          <div className="flex p-1 rounded-xl bg-black/40 border border-white/10 shadow-inner">
             <button
               onClick={() => {
                 if (sessionStatus === "listening") handleStopMicrophoneStream();
                 if (sessionStatus === "streaming") handleStopSimulation();
                 setActiveMode("microphone");
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all flex items-center gap-1.5 ${
                 isMicMode
-                  ? "bg-white text-blue-700 shadow-sm border border-slate-200/50"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-purple-600/30 text-purple-300 border border-purple-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-white"
               }`}
             >
               <Mic className="w-3.5 h-3.5" />
@@ -424,10 +425,10 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                 if (sessionStatus === "streaming") handleStopSimulation();
                 setActiveMode("simulation");
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all flex items-center gap-1.5 ${
                 !isMicMode
-                  ? "bg-white text-blue-700 shadow-sm border border-slate-200/50"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-white"
               }`}
             >
               <FileAudio className="w-3.5 h-3.5" />
@@ -438,25 +439,25 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
           <div
             className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono flex items-center gap-2 border shadow-sm ${
               sessionStatus === "listening" || sessionStatus === "streaming"
-                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
                 : sessionStatus === "chunking"
-                ? "bg-amber-50 text-amber-800 border-amber-200"
+                ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
                 : sessionStatus === "paused"
-                ? "bg-purple-50 text-purple-800 border-purple-200"
+                ? "bg-purple-500/10 text-purple-400 border-purple-500/30"
                 : sessionStatus === "completed"
-                ? "bg-blue-50 text-blue-800 border-blue-200"
-                : "bg-slate-100 text-slate-600 border-slate-200"
+                ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                : "bg-white/5 text-slate-400 border-white/10"
             }`}
           >
             <span
               className={`w-2 h-2 rounded-full ${
                 sessionStatus === "listening" || sessionStatus === "streaming"
-                  ? "bg-emerald-500 animate-ping"
+                  ? "bg-emerald-400 animate-ping"
                   : sessionStatus === "chunking"
-                  ? "bg-amber-500 animate-pulse"
+                  ? "bg-amber-400 animate-pulse"
                   : sessionStatus === "completed"
-                  ? "bg-blue-500"
-                  : "bg-slate-400"
+                  ? "bg-blue-400"
+                  : "bg-slate-500"
               }`}
             />
             {sessionStatus === "idle" && "READY"}
@@ -474,32 +475,32 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Col 1: Live Controls & Inputs */}
-        <div className="glass-card rounded-2xl p-6 space-y-5 shadow-lg border border-white/80">
+        <div className="glass-card rounded-2xl p-6 space-y-5 shadow-xl border border-white/10">
           
           {isMicMode ? (
             /* Microphone Stream Setup */
             <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
                 <div className="flex items-center gap-2">
-                  <Mic className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-sm font-bold text-slate-900">Live Microphone Stream</h3>
+                  <Mic className="w-4 h-4 text-purple-400" />
+                  <h3 className="text-sm font-bold text-white">Live Microphone Stream</h3>
                 </div>
-                <span className="text-[11px] font-mono text-emerald-600 font-bold">16kHz Mono PCM16</span>
+                <span className="text-[11px] font-mono text-emerald-400 font-bold">16kHz Mono PCM16</span>
               </div>
 
               {/* Live VU / Audio Level Meter */}
-              <div className="p-4 rounded-xl bg-slate-900 text-white space-y-2.5 shadow-inner">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-mono text-slate-400 flex items-center gap-1.5">
+              <div className="p-4 rounded-xl bg-black/40 border border-white/10 text-white space-y-2.5 shadow-inner">
+                <div className="flex items-center justify-between text-xs font-mono">
+                  <span className="text-slate-400 flex items-center gap-1.5">
                     <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
                     Microphone Input Level
                   </span>
-                  <span className="font-mono font-bold text-emerald-400">
+                  <span className="font-bold text-emerald-400">
                     {sessionStatus === "listening" ? `${Math.round(micVolumeDb)} dB` : "MUTED"}
                   </span>
                 </div>
 
-                <div className="h-3 w-full bg-slate-800 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-700">
+                <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-700">
                   <div
                     className="h-full rounded-full transition-all duration-75"
                     style={{
@@ -524,9 +525,9 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
 
               {/* Claimed Speaker Biometrics */}
               <div className="space-y-1.5 pt-1">
-                <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-300 font-mono flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <Fingerprint className="w-3.5 h-3.5 text-blue-600" />
+                    <Fingerprint className="w-3.5 h-3.5 text-purple-400" />
                     Claimed Speaker (Biometric Verification):
                   </span>
                   <span className="text-[10px] font-mono text-slate-400">ECAPA-TDNN</span>
@@ -534,11 +535,11 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                 <select
                   value={context.speaker_id}
                   onChange={(e) => onContextChange({ speaker_id: e.target.value })}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:outline-none focus:border-blue-500 shadow-sm"
+                  className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-purple-500 shadow-inner"
                 >
-                  <option value="">-- No Speaker Claimed (Detection Only) --</option>
+                  <option value="" className="bg-slate-900">-- No Speaker Claimed (Detection Only) --</option>
                   {speakers.map((spk) => (
-                    <option key={spk.speaker_id} value={spk.speaker_id}>
+                    <option key={spk.speaker_id} value={spk.speaker_id} className="bg-slate-900">
                       {spk.speaker_id} {spk.speaker_name ? `— ${spk.speaker_name}` : ""}
                     </option>
                   ))}
@@ -551,7 +552,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                   <button
                     id="btn-start-mic-stream"
                     onClick={handleStartMicrophoneStream}
-                    className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 transition-all active:scale-[0.98]"
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-500/25 transition-all squish-btn font-mono"
                   >
                     <Mic className="w-4 h-4" />
                     Start Live Microphone Analysis
@@ -560,7 +561,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                   <button
                     id="btn-stop-mic-stream"
                     onClick={handleStopMicrophoneStream}
-                    className="w-full py-3.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-500/25 transition-all active:scale-[0.98]"
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-500/25 transition-all squish-btn font-mono"
                   >
                     <Square className="w-4 h-4 fill-white" />
                     Stop Live Analysis Stream
@@ -568,8 +569,8 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                 )}
 
                 {sessionError && (
-                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-900 text-xs flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start gap-2 font-mono">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                     <span>{sessionError}</span>
                   </div>
                 )}
@@ -578,12 +579,12 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
           ) : (
             /* Simulation File Setup */
             <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
                 <div className="flex items-center gap-2">
-                  <FileAudio className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-sm font-bold text-slate-900">Audio File Stream</h3>
+                  <FileAudio className="w-4 h-4 text-cyan-400" />
+                  <h3 className="text-sm font-bold text-white">Audio File Stream</h3>
                 </div>
-                <span className="text-[11px] font-mono text-slate-500">16kHz PCM</span>
+                <span className="text-[11px] font-mono text-slate-400">16kHz PCM</span>
               </div>
 
               <input
@@ -597,28 +598,28 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
               {!selectedFile ? (
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl p-5 text-center cursor-pointer transition-all bg-white/50 hover:bg-white/90 shadow-inner space-y-2"
+                  className="border-2 border-dashed border-slate-700 hover:border-cyan-500 rounded-2xl p-5 text-center cursor-pointer transition-all bg-black/40 hover:bg-black/60 shadow-inner space-y-2"
                 >
-                  <Upload className="w-6 h-6 text-blue-600 mx-auto" />
-                  <div className="text-xs font-bold text-slate-800">Select Audio File for Stream</div>
-                  <div className="text-[11px] text-slate-500">WAV, FLAC, MP3 (Will slice into ~4s windows)</div>
+                  <Upload className="w-6 h-6 text-cyan-400 mx-auto" />
+                  <div className="text-xs font-bold text-slate-200 font-mono">Select Audio File for Stream</div>
+                  <div className="text-[11px] text-slate-400 font-mono">WAV, FLAC, MP3 (Will slice into ~4s windows)</div>
                 </div>
               ) : (
-                <div className="p-3.5 rounded-xl bg-white border border-slate-200 shadow-sm space-y-2">
+                <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 shadow-sm space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <FileAudio className="w-4 h-4 text-blue-600 shrink-0" />
-                      <span className="text-xs font-bold text-slate-900 truncate">{selectedFile.name}</span>
+                    <div className="flex items-center gap-2 min-w-0 font-mono">
+                      <FileAudio className="w-4 h-4 text-cyan-400 shrink-0" />
+                      <span className="text-xs font-bold text-white truncate">{selectedFile.name}</span>
                     </div>
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={sessionStatus === "streaming" || sessionStatus === "chunking"}
-                      className="text-slate-500 hover:text-slate-800 text-[11px] font-semibold px-2 py-0.5 rounded hover:bg-slate-100"
+                      className="text-slate-400 hover:text-white text-[11px] font-semibold px-2 py-0.5 rounded hover:bg-white/10 font-mono"
                     >
                       Change
                     </button>
                   </div>
-                  <div className="text-[11px] font-mono text-slate-500 flex items-center justify-between">
+                  <div className="text-[11px] font-mono text-slate-400 flex items-center justify-between">
                     <span>Size: {(selectedFile.size / 1024).toFixed(1)} KB</span>
                     {chunks.length > 0 && <span>{chunks.length} Windows Prepared</span>}
                   </div>
@@ -627,8 +628,8 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
 
               {/* Sample Picker */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5 font-mono">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
                   Or Pick Pre-loaded Test Sample:
                 </label>
                 <div className="grid grid-cols-1 gap-1.5">
@@ -637,37 +638,37 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                       key={s.filename}
                       onClick={() => handleSelectSample(s)}
                       disabled={isLoadingSample || sessionStatus === "streaming" || sessionStatus === "chunking"}
-                      className={`text-left px-3 py-2 rounded-xl text-xs border transition-all flex items-center justify-between ${
+                      className={`text-left px-3 py-2 rounded-xl text-xs font-mono border transition-all flex items-center justify-between ${
                         selectedSampleName === s.filename
-                          ? "bg-blue-50 border-blue-300 text-blue-900 font-bold shadow-sm"
-                          : "bg-white/60 hover:bg-white border-slate-200 text-slate-700"
+                          ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300 font-bold shadow-sm"
+                          : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-300"
                       }`}
                     >
                       <span className="truncate">{s.filename}</span>
-                      <span className="text-[10px] font-mono text-slate-400 shrink-0">WAV</span>
+                      <span className="text-[10px] text-slate-500 shrink-0">WAV</span>
                     </button>
                   ))}
                 </div>
               </div>
 
               {/* Claimed Speaker */}
-              <div className="space-y-1.5 pt-1 border-t border-slate-200/80">
-                <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+              <div className="space-y-1.5 pt-1 border-t border-white/10">
+                <label className="text-xs font-bold text-slate-300 flex items-center justify-between font-mono">
                   <span className="flex items-center gap-1.5">
-                    <Fingerprint className="w-3.5 h-3.5 text-blue-600" />
+                    <Fingerprint className="w-3.5 h-3.5 text-cyan-400" />
                     Claimed Enrolled Speaker Profile:
                   </span>
-                  <span className="text-[10px] font-mono text-slate-400">ECAPA-TDNN</span>
+                  <span className="text-[10px] text-slate-400">ECAPA-TDNN</span>
                 </label>
                 <select
                   value={context.speaker_id}
                   onChange={(e) => onContextChange({ speaker_id: e.target.value })}
                   disabled={sessionStatus === "streaming" || sessionStatus === "chunking"}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:outline-none focus:border-blue-500 shadow-sm"
+                  className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500 shadow-inner"
                 >
-                  <option value="">-- No Speaker Claimed (Detection Only) --</option>
+                  <option value="" className="bg-slate-900">-- No Speaker Claimed (Detection Only) --</option>
                   {speakers.map((spk) => (
-                    <option key={spk.speaker_id} value={spk.speaker_id}>
+                    <option key={spk.speaker_id} value={spk.speaker_id} className="bg-slate-900">
                       {spk.speaker_id} {spk.speaker_name ? `— ${spk.speaker_name}` : ""}
                     </option>
                   ))}
@@ -681,23 +682,23 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                     id="btn-start-live-sim"
                     onClick={handleStartSimulation}
                     disabled={!selectedFile || isLoadingSample}
-                    className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 transition-all active:scale-[0.98]"
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/25 transition-all squish-btn font-mono"
                   >
                     <Play className="w-4 h-4 fill-white" />
                     Start Simulation Stream
                   </button>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2 font-mono">
                     <button
                       onClick={handlePauseResumeSimulation}
-                      className="py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                      className="py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all squish-btn"
                     >
                       {sessionStatus === "paused" ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5" />}
                       {sessionStatus === "paused" ? "Resume" : "Pause"}
                     </button>
                     <button
                       onClick={handleStopSimulation}
-                      className="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                      className="py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all squish-btn border border-white/10"
                     >
                       <Square className="w-3.5 h-3.5" />
                       Stop
@@ -706,8 +707,8 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                 )}
 
                 {sessionError && (
-                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-900 text-xs flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start gap-2 font-mono">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                     <span>{sessionError}</span>
                   </div>
                 )}
@@ -732,15 +733,15 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             
             {/* Metric 1: Deepfake Probability */}
-            <div className="glass-card rounded-2xl p-5 border border-white/80 shadow-md space-y-2 relative overflow-hidden">
+            <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-xl space-y-2 relative overflow-hidden">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
                   Deepfake Probability
                 </span>
-                <Cpu className="w-4 h-4 text-blue-600" />
+                <Cpu className="w-4 h-4 text-purple-400" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-extrabold text-slate-900 font-mono">
+                <span className="text-3xl font-extrabold text-white font-mono">
                   {isMicMode
                     ? latestMicResult
                       ? `${(latestMicResult.fake_probability * 100).toFixed(1)}%`
@@ -753,8 +754,8 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                   <span
                     className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-full ${
                       (isMicMode ? latestMicResult?.fake_probability : latestFileResult?.response.deepfake_detection.fake_probability)! > 0.5
-                        ? "bg-red-100 text-red-700"
-                        : "bg-emerald-100 text-emerald-700"
+                        ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                        : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                     }`}
                   >
                     {(isMicMode ? latestMicResult?.fake_probability : latestFileResult?.response.deepfake_detection.fake_probability)! > 0.5
@@ -763,7 +764,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                   </span>
                 )}
               </div>
-              <div className="text-[11px] text-slate-500">
+              <div className="text-[11px] text-slate-400 font-mono">
                 {isMicMode
                   ? latestMicResult
                     ? `Measured Latency: ${latestMicResult.server_latency_ms} ms`
@@ -775,57 +776,57 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
             </div>
 
             {/* Metric 2: Biometric Verification / Acoustic Anomaly */}
-            <div className="glass-card rounded-2xl p-5 border border-white/80 shadow-md space-y-2 relative overflow-hidden">
+            <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-xl space-y-2 relative overflow-hidden">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
                   {context.speaker_id ? "Biometric Match" : "Acoustic Anomaly"}
                 </span>
-                {context.speaker_id ? <Fingerprint className="w-4 h-4 text-blue-600" /> : <Gauge className="w-4 h-4 text-blue-600" />}
+                {context.speaker_id ? <Fingerprint className="w-4 h-4 text-cyan-400" /> : <Gauge className="w-4 h-4 text-cyan-400" />}
               </div>
               <div className="flex items-baseline gap-2">
                 {isMicMode ? (
                   latestMicResult && latestMicResult.speaker_verification?.similarity_score !== null && latestMicResult.speaker_verification?.similarity_score !== undefined ? (
                     <>
-                      <span className="text-3xl font-extrabold text-slate-900 font-mono">
+                      <span className="text-3xl font-extrabold text-white font-mono">
                         {(latestMicResult.speaker_verification.similarity_score * 100).toFixed(0)}%
                       </span>
                       <span
                         className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-full ${
                           latestMicResult.speaker_verification.is_match
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-red-100 text-red-700"
+                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                            : "bg-red-500/20 text-red-400 border border-red-500/30"
                         }`}
                       >
                         {latestMicResult.speaker_verification.is_match ? "MATCH" : "MISMATCH"}
                       </span>
                     </>
                   ) : latestMicResult ? (
-                    <span className="text-3xl font-extrabold text-slate-900 font-mono">
+                    <span className="text-3xl font-extrabold text-white font-mono">
                       {(latestMicResult.acoustic_anomaly * 100).toFixed(0)}%
                     </span>
                   ) : (
-                    <span className="text-xl font-bold text-slate-400">Standby</span>
+                    <span className="text-xl font-bold text-slate-500 font-mono">Standby</span>
                   )
                 ) : latestFileResult && latestFileResult.response.speaker_verification?.similarity_score !== undefined ? (
                   <>
-                    <span className="text-3xl font-extrabold text-slate-900 font-mono">
+                    <span className="text-3xl font-extrabold text-white font-mono">
                       {(latestFileResult.response.speaker_verification.similarity_score! * 100).toFixed(0)}%
                     </span>
                     <span
                       className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-full ${
                         latestFileResult.response.speaker_verification.is_match
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-red-100 text-red-700"
+                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                          : "bg-red-500/20 text-red-400 border border-red-500/30"
                       }`}
                     >
                       {latestFileResult.response.speaker_verification.is_match ? "MATCH" : "MISMATCH"}
                     </span>
                   </>
                 ) : (
-                  <span className="text-xl font-bold text-slate-400">Standby</span>
+                  <span className="text-xl font-bold text-slate-500 font-mono">Standby</span>
                 )}
               </div>
-              <div className="text-[11px] text-slate-500">
+              <div className="text-[11px] text-slate-400 font-mono">
                 {context.speaker_id
                   ? `Threshold τ: ${context.verification_threshold.toFixed(2)}`
                   : "Prosody jitter/shimmer/F0"}
@@ -833,15 +834,15 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
             </div>
 
             {/* Metric 3: Live Composite Risk Score */}
-            <div className="glass-card rounded-2xl p-5 border border-white/80 shadow-md space-y-2 relative overflow-hidden">
+            <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-xl space-y-2 relative overflow-hidden">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">
                   Live Risk Score
                 </span>
-                <TrendingUp className="w-4 h-4 text-blue-600" />
+                <TrendingUp className="w-4 h-4 text-purple-400" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-extrabold text-slate-900 font-mono">
+                <span className="text-3xl font-extrabold text-white font-mono">
                   {isMicMode
                     ? latestMicResult ? latestMicResult.risk_score : "—"
                     : latestFileResult ? latestFileResult.response.risk_score : "—"}
@@ -851,17 +852,17 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                     className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-full ${
                       (isMicMode ? latestMicResult?.risk_level : latestFileResult?.response.risk_level) === "HIGH" ||
                       (isMicMode ? latestMicResult?.risk_level : latestFileResult?.response.risk_level) === "CRITICAL"
-                        ? "bg-red-100 text-red-700"
+                        ? "bg-red-500/20 text-red-400 border border-red-500/30"
                         : (isMicMode ? latestMicResult?.risk_level : latestFileResult?.response.risk_level) === "MEDIUM"
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-emerald-100 text-emerald-700"
+                        ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                        : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                     }`}
                   >
                     {isMicMode ? latestMicResult?.risk_level : latestFileResult?.response.risk_level}
                   </span>
                 )}
               </div>
-              <div className="text-[11px] text-slate-500">
+              <div className="text-[11px] text-slate-400 font-mono">
                 {isMicMode
                   ? latestMicResult
                     ? `Action: ${latestMicResult.recommended_action}`
@@ -874,27 +875,27 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
           </div>
 
           {/* Real-time Timeline Visualization Ribbon */}
-          <div className="glass-card rounded-2xl p-6 space-y-4 shadow-lg border border-white/80">
-            <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+          <div className="glass-card rounded-2xl p-6 space-y-4 shadow-xl border border-white/10">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-900">
+                <Activity className="w-4 h-4 text-purple-400" />
+                <h3 className="text-sm font-bold text-white">
                   {isMicMode ? "Live Stream Rolling Windows Timeline" : "Call Analysis Slicing Timeline"}
                 </h3>
               </div>
-              <div className="flex items-center gap-3 text-xs font-mono text-slate-500">
-                <span>Max Risk: <strong className="text-slate-900">{isMicMode ? maxMicRisk : 0}</strong></span>
-                <span>Avg Fake Prob: <strong className="text-slate-900">{(avgMicFakeProb * 100).toFixed(1)}%</strong></span>
+              <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
+                <span>Max Risk: <strong className="text-white">{isMicMode ? maxMicRisk : 0}</strong></span>
+                <span>Avg Fake Prob: <strong className="text-white">{(avgMicFakeProb * 100).toFixed(1)}%</strong></span>
               </div>
             </div>
 
             {isMicMode ? (
               /* Microphone Rolling Window History */
               streamResults.length === 0 ? (
-                <div className="p-8 text-center rounded-xl bg-slate-50/70 border border-slate-200 space-y-2">
-                  <Mic className="w-8 h-8 text-slate-400 mx-auto animate-bounce" />
-                  <div className="text-sm font-bold text-slate-800">Live Microphone Stream Ready</div>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                <div className="p-8 text-center rounded-xl bg-black/30 border border-white/5 space-y-2">
+                  <Mic className="w-8 h-8 text-slate-500 mx-auto animate-bounce" />
+                  <div className="text-sm font-bold text-slate-300 font-mono">Live Microphone Stream Ready</div>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto font-mono">
                     Click "Start Live Microphone Analysis" to begin streaming 16kHz audio. Continuous evaluation windows will appear here with measured latency and real-time risk scores.
                   </p>
                 </div>
@@ -904,19 +905,19 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                   <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
                     {streamResults.map((win, idx) => {
                       const isSelected = activeWindowInspect?.window_index === win.window_index;
-                      let bgClass = "bg-emerald-500 text-white";
+                      let bgClass = "bg-emerald-500/20 border border-emerald-500/40 text-emerald-300";
                       if (win.risk_level === "HIGH" || win.risk_level === "CRITICAL") {
-                        bgClass = "bg-red-500 text-white";
+                        bgClass = "bg-red-500/20 border border-red-500/40 text-red-300";
                       } else if (win.risk_level === "MEDIUM") {
-                        bgClass = "bg-amber-500 text-slate-950";
+                        bgClass = "bg-amber-500/20 border border-amber-500/40 text-amber-300";
                       }
 
                       return (
                         <button
                           key={win.window_index}
                           onClick={() => setSelectedInspectWindow(win)}
-                          className={`min-w-[48px] h-11 rounded-xl flex flex-col items-center justify-center text-[10px] font-mono font-bold shrink-0 transition-all ${bgClass} ${
-                            isSelected ? "ring-2 ring-blue-600 ring-offset-2 scale-105 shadow-md" : "opacity-90 hover:opacity-100"
+                          className={`min-w-[48px] h-11 rounded-xl flex flex-col items-center justify-center text-[10px] font-mono font-bold shrink-0 transition-all squish-btn ${bgClass} ${
+                            isSelected ? "ring-2 ring-purple-500 scale-105 shadow-lg" : "opacity-80 hover:opacity-100"
                           }`}
                         >
                           <span>#{win.window_index}</span>
@@ -927,27 +928,27 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                   </div>
 
                   {/* SVG Risk Progression Chart */}
-                  <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200 space-y-2">
-                    <div className="flex justify-between text-[11px] font-bold text-slate-600">
+                  <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                    <div className="flex justify-between text-[11px] font-bold text-slate-400 font-mono">
                       <span>Live Multi-Signal Progression</span>
                       <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Risk Score</span>
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Fake Prob %</span>
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500" /> Acoustic Anomaly %</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Risk Score</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-400" /> Fake Prob %</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-400" /> Acoustic Anomaly %</span>
                       </div>
                     </div>
 
                     <div className="h-28 w-full relative">
                       <svg className="w-full h-full overflow-visible" viewBox={`0 0 ${Math.max(streamResults.length - 1, 1) * 100} 100`} preserveAspectRatio="none">
-                        <line x1="0" y1="25" x2="10000" y2="25" stroke="#e2e8f0" strokeDasharray="2,2" />
-                        <line x1="0" y1="50" x2="10000" y2="50" stroke="#e2e8f0" strokeDasharray="2,2" />
-                        <line x1="0" y1="75" x2="10000" y2="75" stroke="#e2e8f0" strokeDasharray="2,2" />
+                        <line x1="0" y1="25" x2="10000" y2="25" stroke="#334155" strokeDasharray="2,2" />
+                        <line x1="0" y1="50" x2="10000" y2="50" stroke="#334155" strokeDasharray="2,2" />
+                        <line x1="0" y1="75" x2="10000" y2="75" stroke="#334155" strokeDasharray="2,2" />
 
                         {/* Risk Line */}
                         {streamResults.length > 1 && (
                           <polyline
                             fill="none"
-                            stroke="#ef4444"
+                            stroke="#f87171"
                             strokeWidth="3"
                             points={streamResults
                               .map((r, i) => `${i * 100},${100 - r.risk_score}`)
@@ -959,7 +960,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                         {streamResults.length > 1 && (
                           <polyline
                             fill="none"
-                            stroke="#3b82f6"
+                            stroke="#22d3ee"
                             strokeWidth="2"
                             strokeDasharray="4,3"
                             points={streamResults
@@ -972,7 +973,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                         {streamResults.length > 1 && (
                           <polyline
                             fill="none"
-                            stroke="#a855f7"
+                            stroke="#c084fc"
                             strokeWidth="2"
                             strokeDasharray="2,2"
                             points={streamResults
@@ -988,7 +989,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                             cx={i * 100}
                             cy={100 - r.risk_score}
                             r="4"
-                            className="fill-red-600 stroke-white stroke-2"
+                            className="fill-red-400 stroke-black stroke-2"
                           />
                         ))}
                       </svg>
@@ -999,10 +1000,10 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
             ) : (
               /* Simulation Chunks Timeline */
               chunks.length === 0 ? (
-                <div className="p-8 text-center rounded-xl bg-slate-50/70 border border-slate-200 space-y-2">
-                  <Clock className="w-8 h-8 text-slate-400 mx-auto" />
-                  <div className="text-sm font-bold text-slate-800">Timeline Standing By</div>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                <div className="p-8 text-center rounded-xl bg-black/30 border border-white/5 space-y-2">
+                  <Clock className="w-8 h-8 text-slate-500 mx-auto" />
+                  <div className="text-sm font-bold text-slate-300 font-mono">Timeline Standing By</div>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto font-mono">
                     Click "Start Simulation Stream" to slice audio into ~4s chunks and observe real-time pipeline telemetry.
                   </p>
                 </div>
@@ -1014,17 +1015,17 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                       const isCurrent = currentChunkIndex === idx;
                       const isSelected = selectedInspectChunk?.chunkIndex === idx;
 
-                      let bgClass = "bg-slate-200 text-slate-400";
+                      let bgClass = "bg-white/5 text-slate-500 border border-white/10";
                       if (res) {
                         if (res.response.risk_level === "CRITICAL" || res.response.risk_level === "HIGH") {
-                          bgClass = "bg-red-500 text-white shadow-sm shadow-red-500/30";
+                          bgClass = "bg-red-500/20 border border-red-500/40 text-red-300 shadow-sm";
                         } else if (res.response.risk_level === "MEDIUM") {
-                          bgClass = "bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/30";
+                          bgClass = "bg-amber-500/20 border border-amber-500/40 text-amber-300 shadow-sm";
                         } else {
-                          bgClass = "bg-emerald-500 text-white shadow-sm shadow-emerald-500/30";
+                          bgClass = "bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 shadow-sm";
                         }
                       } else if (isCurrent) {
-                        bgClass = "bg-blue-600 text-white animate-pulse";
+                        bgClass = "bg-cyan-500/40 border border-cyan-400 text-cyan-200 animate-pulse";
                       }
 
                       return (
@@ -1032,8 +1033,8 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                           key={idx}
                           onClick={() => res && setSelectedInspectChunk(res)}
                           disabled={!res}
-                          className={`h-10 rounded-lg flex flex-col items-center justify-center text-[10px] font-mono font-bold transition-all ${bgClass} ${
-                            isSelected ? "ring-2 ring-blue-600 ring-offset-2 scale-105" : ""
+                          className={`h-10 rounded-lg flex flex-col items-center justify-center text-[10px] font-mono font-bold transition-all squish-btn ${bgClass} ${
+                            isSelected ? "ring-2 ring-cyan-400 scale-105" : ""
                           }`}
                         >
                           <span>#{idx + 1}</span>
@@ -1051,17 +1052,17 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
 
       {/* Selected Window Deep-Dive Inspection Card */}
       {isMicMode && activeWindowInspect && (
-        <div id="chunk-inspect-card" className="glass-card rounded-2xl p-6 space-y-4 shadow-lg border border-white/80">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+        <div id="chunk-inspect-card" className="glass-card rounded-2xl p-6 space-y-4 shadow-xl border border-white/10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 font-mono font-bold text-xs">
+              <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 font-mono font-bold text-xs">
                 #{activeWindowInspect.window_index}
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-900">
+                <h3 className="text-sm font-bold text-white">
                   Live Stream Window #{activeWindowInspect.window_index} Diagnostics
                 </h3>
-                <div className="text-[11px] font-mono text-slate-500">
+                <div className="text-[11px] font-mono text-slate-400">
                   Call ID: {activeWindowInspect.call_id} &bull; Measured Round-Trip Server Latency: {activeWindowInspect.server_latency_ms} ms &bull; Duration: {activeWindowInspect.window_duration_sec}s
                 </div>
               </div>
@@ -1071,10 +1072,10 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
               <span
                 className={`text-xs font-bold font-mono px-3 py-1 rounded-full ${
                   activeWindowInspect.risk_level === "CRITICAL" || activeWindowInspect.risk_level === "HIGH"
-                    ? "bg-red-100 text-red-800 border border-red-200"
+                    ? "bg-red-500/20 text-red-400 border border-red-500/30"
                     : activeWindowInspect.risk_level === "MEDIUM"
-                    ? "bg-amber-100 text-amber-800 border border-amber-200"
-                    : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                    : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                 }`}
               >
                 {activeWindowInspect.risk_level} RISK ({activeWindowInspect.risk_score}/100)
@@ -1082,14 +1083,14 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-mono">
             {/* Deepfake Info */}
-            <div className="p-4 rounded-xl bg-white/70 border border-slate-200 space-y-1.5">
-              <div className="font-bold text-slate-800 flex items-center justify-between">
+            <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-1.5">
+              <div className="font-bold text-slate-300 flex items-center justify-between">
                 <span>Wav2Vec2 Classifier</span>
-                <span className="font-mono text-blue-600 font-bold">{activeWindowInspect.deepfake_detection.prediction}</span>
+                <span className="text-cyan-400 font-bold">{activeWindowInspect.deepfake_detection.prediction}</span>
               </div>
-              <div className="text-slate-600 font-mono text-[11px] space-y-0.5">
+              <div className="text-slate-400 text-[11px] space-y-0.5">
                 <div>P(Fake): {(activeWindowInspect.fake_probability * 100).toFixed(2)}%</div>
                 <div>P(Real): {(activeWindowInspect.real_probability * 100).toFixed(2)}%</div>
                 <div>Inference: {activeWindowInspect.deepfake_detection.inference_time_ms} ms</div>
@@ -1097,65 +1098,86 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
             </div>
 
             {/* Prosody Analysis */}
-            <div className="p-4 rounded-xl bg-white/70 border border-slate-200 space-y-1.5">
-              <div className="font-bold text-slate-800 flex items-center justify-between">
+            <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-1.5">
+              <div className="font-bold text-slate-300 flex items-center justify-between">
                 <span>Prosody & Acoustic</span>
-                <span className="font-mono text-purple-600 font-bold">{(activeWindowInspect.acoustic_anomaly * 100).toFixed(0)}%</span>
+                <span className="text-purple-400 font-bold">{(activeWindowInspect.acoustic_anomaly * 100).toFixed(0)}%</span>
               </div>
-              <div className="text-slate-600 text-[11px] space-y-0.5">
+              <div className="text-slate-400 text-[11px] space-y-0.5">
                 {activeWindowInspect.prosody_reasons && activeWindowInspect.prosody_reasons.length > 0 ? (
                   activeWindowInspect.prosody_reasons.map((r, i) => (
-                    <div key={i} className="text-slate-700 font-medium truncate">• {r}</div>
+                    <div key={i} className="text-slate-300 font-medium truncate">• {r}</div>
                   ))
                 ) : (
-                  <div className="text-emerald-600 font-medium">Natural prosody rhythm</div>
+                  <div className="text-emerald-400 font-medium">Natural prosody rhythm</div>
                 )}
               </div>
             </div>
 
             {/* Speaker Biometrics */}
-            <div className="p-4 rounded-xl bg-white/70 border border-slate-200 space-y-1.5">
-              <div className="font-bold text-slate-800 flex items-center justify-between">
+            <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-1.5">
+              <div className="font-bold text-slate-300 flex items-center justify-between">
                 <span>ECAPA Biometrics</span>
                 {activeWindowInspect.speaker_verification?.similarity_score !== null && activeWindowInspect.speaker_verification?.similarity_score !== undefined ? (
-                  <span className="font-mono text-blue-600 font-bold">
+                  <span className="text-cyan-400 font-bold">
                     {activeWindowInspect.speaker_verification.is_match ? "MATCH" : "MISMATCH"}
                   </span>
                 ) : (
-                  <span className="text-slate-400 font-normal">None</span>
+                  <span className="text-slate-500 font-normal">None</span>
                 )}
               </div>
-              <div className="text-slate-600 font-mono text-[11px]">
+              <div className="text-slate-400 text-[11px]">
                 {activeWindowInspect.speaker_verification?.speaker_id ? (
                   <>
                     <div>Speaker: {activeWindowInspect.speaker_verification.speaker_id}</div>
                     <div>Sim: {activeWindowInspect.speaker_verification.similarity_score}</div>
                   </>
                 ) : (
-                  <div className="text-slate-400">No profile claimed</div>
+                  <div className="text-slate-500">No profile claimed</div>
                 )}
               </div>
             </div>
 
             {/* Recommended Action & Flags */}
-            <div className="p-4 rounded-xl bg-white/70 border border-slate-200 space-y-1.5">
-              <div className="font-bold text-slate-800 flex items-center justify-between">
+            <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-1.5">
+              <div className="font-bold text-slate-300 flex items-center justify-between">
                 <span>Action & Flags</span>
-                <span className="font-mono font-bold text-slate-900">{activeWindowInspect.recommended_action}</span>
+                <span className="font-bold text-white">{activeWindowInspect.recommended_action}</span>
               </div>
-              <div className="text-[11px] text-slate-600 space-y-0.5">
+              <div className="text-[11px] text-slate-400 space-y-0.5">
                 {activeWindowInspect.flags && activeWindowInspect.flags.length > 0 ? (
                   activeWindowInspect.flags.map((f, i) => (
-                    <div key={i} className="text-red-700 font-medium truncate">⚠ {f}</div>
+                    <div key={i} className="text-red-400 font-medium truncate">⚠ {f}</div>
                   ))
                 ) : (
-                  <div className="text-emerald-600 font-medium">No suspicious risk flags</div>
+                  <div className="text-emerald-400 font-medium">No suspicious risk flags</div>
                 )}
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Secondary Verification Panel for Live Stream / Simulation Sessions */}
+      {(streamResults.length > 0 || liveFileResults.length > 0) && (() => {
+        const latestResult = isMicMode
+          ? streamResults[streamResults.length - 1]
+          : liveFileResults[liveFileResults.length - 1]?.response;
+
+        if (!latestResult) return null;
+
+        return (
+          <div className="mt-4">
+            <SecondaryVerificationPanel
+              callId={latestResult.call_id}
+              initialSession={latestResult.verification_session}
+              recommendedAction={latestResult.recommended_action}
+              riskScore={latestResult.risk_score}
+              riskLevel={latestResult.risk_level}
+            />
+          </div>
+        );
+      })()}
     </div>
   );
 };

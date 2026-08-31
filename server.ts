@@ -9,7 +9,7 @@ import os from "os";
 import { createServer as createViteServer } from "vite";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { WebSocketServer, WebSocket, RawData } from "ws";
-import { ContextRetrievalService, EnrichedCallContext } from "./src/server/contextService";
+import { ContextRetrievalService, EnrichedCallContext, DEFAULT_ORG_ID } from "./src/server/contextService";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -603,6 +603,15 @@ const handleAnalyze = async (req: express.Request, res: express.Response) => {
     params.acoustic_anomaly = parseFloat(req.body.acoustic_anomaly_override);
   }
 
+  // Multilingual speech options (Non-authoritative metadata)
+  if (req.body.selected_language) params.selected_language = String(req.body.selected_language);
+  if (req.body.language) params.language = String(req.body.language);
+  if (req.body.detected_language) params.detected_language = String(req.body.detected_language);
+  if (req.body.language_confidence !== undefined) params.language_confidence = parseFloat(req.body.language_confidence);
+  if (req.body.accent_region) params.accent_region = String(req.body.accent_region);
+  if (req.body.accent_profile) params.accent_profile = String(req.body.accent_profile);
+  if (req.body.transcript_language) params.transcript_language = String(req.body.transcript_language);
+
   let enrichedContext: EnrichedCallContext | null = null;
 
   try {
@@ -622,6 +631,13 @@ const handleAnalyze = async (req: express.Request, res: express.Response) => {
         transcript_text: params.transcript_text,
         is_caller_recognized: params.is_caller_recognized,
         is_previously_flagged: params.is_previously_flagged,
+        selected_language: params.selected_language || params.language,
+        language: params.language || params.selected_language,
+        detected_language: params.detected_language,
+        language_confidence: params.language_confidence,
+        accent_region: params.accent_region || params.accent_profile,
+        accent_profile: params.accent_profile || params.accent_region,
+        transcript_language: params.transcript_language,
       });
 
       params.context = enrichedContext;
@@ -630,6 +646,12 @@ const handleAnalyze = async (req: express.Request, res: express.Response) => {
     }
 
     const result = await daemonManager.request("analyze", params);
+    if (result.status === 200 && result.data && result.data.call_id) {
+      if (result.data.verification_session) {
+        activeVerificationSessions.set(result.data.call_id, result.data.verification_session);
+      }
+      recordSecurityEventFromAnalysis(result.data, params, req.body, enrichedContext);
+    }
     res.status(result.status).json(result.data);
 
     // Asynchronously persist metadata in background without blocking response
@@ -764,6 +786,416 @@ const handleVerifySpeaker = async (req: express.Request, res: express.Response) 
 app.post("/verify-speaker", upload.single("file"), handleVerifySpeaker);
 app.post("/api/verify-speaker", upload.single("file"), handleVerifySpeaker);
 
+// In-memory cache for active Secondary Verification Workflow sessions
+const activeVerificationSessions = new Map<string, any>();
+
+// In-memory cache for authoritative Security Events & Threat Alerts
+interface StoredSecurityEvent {
+  id: string;
+  call_id: string;
+  organization_id: string;
+  event_type: string;
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  timestamp: number;
+  caller_id?: string | null;
+  contact_id?: string | null;
+  contact_name?: string | null;
+  claimed_role?: string | null;
+  speaker_id?: string | null;
+  risk_score: number;
+  risk_level: string;
+  explanation: string;
+  recommended_action: string;
+  verification_status?: string | null;
+  verification_session?: any;
+  is_held: boolean;
+  transaction_amount?: number | null;
+  hold_reason?: string | null;
+  flags: string[];
+  contributing_signals?: Record<string, any>;
+  status: "OPEN" | "RESOLVED" | "ESCALATED" | "INVESTIGATING";
+  resolved_at?: number | null;
+  resolved_by?: string | null;
+  is_simulated: boolean;
+}
+
+const activeSecurityEvents: StoredSecurityEvent[] = [
+  {
+    id: "EVT-9082-CRIT",
+    call_id: "CALL-2026-9082-AZ",
+    organization_id: DEFAULT_ORG_ID,
+    event_type: "DEEPFAKE_VOICE_CLONE",
+    severity: "CRITICAL",
+    timestamp: Date.now() - 2 * 60 * 1000,
+    caller_id: "+1 (415) 890-2100",
+    contact_id: "EMP-9001",
+    contact_name: "Jane Doe (CEO)",
+    claimed_role: "Chief Executive Officer",
+    speaker_id: "EMP-9001",
+    risk_score: 94,
+    risk_level: "CRITICAL",
+    explanation: "Wav2Vec2 neural voice clone detected with 96.2% synthetic confidence. Biometric cosine mismatch (0.38 < 0.70). High-value wire transfer blocked.",
+    recommended_action: "BLOCK",
+    verification_status: "BLOCKED",
+    is_held: true,
+    transaction_amount: 85000,
+    hold_reason: "Call terminated and transaction blocked due to critical voice clone attack.",
+    flags: [
+      "Wav2Vec2 high neural synthesis probability (96.2%)",
+      "ECAPA-TDNN biometric cosine distance mismatch (0.38 < 0.70)",
+      "High financial wire anomaly ($85,000 > $5,000 threshold)",
+      "Urgency pressure tactics in transcript",
+    ],
+    contributing_signals: {
+      fake_probability: 0.962,
+      speaker_similarity: 0.38,
+      speaker_match: false,
+      acoustic_anomaly: 0.84,
+      role_mismatch: true,
+    },
+    status: "OPEN",
+    is_simulated: true,
+  },
+  {
+    id: "EVT-9081-HIGH",
+    call_id: "CALL-2026-9081-TX",
+    organization_id: DEFAULT_ORG_ID,
+    event_type: "TRANSACTION_AUTO_HOLD",
+    severity: "HIGH",
+    timestamp: Date.now() - 18 * 60 * 1000,
+    caller_id: "+1 (212) 555-0199",
+    contact_id: "EMP-4102",
+    contact_name: "Robert Vance",
+    claimed_role: "Treasurer / Accounting",
+    speaker_id: "EMP-4102",
+    risk_score: 76,
+    risk_level: "HIGH",
+    explanation: "Transaction of $34,500.00 placed on auto-hold pending secondary identity verification. Acoustic anomalies detected.",
+    recommended_action: "SECONDARY_VERIFICATION",
+    verification_status: "PENDING",
+    is_held: true,
+    transaction_amount: 34500,
+    hold_reason: "Transaction placed on HOLD pending secondary identity verification.",
+    flags: [
+      "Synthetic acoustic artifact anomalies detected",
+      "Biometric speaker mismatch against enrolled profile",
+      "Unrecognized inbound VoIP gateway",
+    ],
+    contributing_signals: {
+      fake_probability: 0.784,
+      speaker_similarity: 0.52,
+      speaker_match: false,
+      acoustic_anomaly: 0.65,
+    },
+    status: "OPEN",
+    is_simulated: true,
+  },
+  {
+    id: "EVT-9080-WARN",
+    call_id: "CALL-2026-9080-CA",
+    organization_id: DEFAULT_ORG_ID,
+    event_type: "ROLE_MISMATCH",
+    severity: "MEDIUM",
+    timestamp: Date.now() - 45 * 60 * 1000,
+    caller_id: "+1 (650) 333-8821",
+    contact_id: "EMP-1044",
+    contact_name: "Marcus Chen",
+    claimed_role: "Senior Director",
+    speaker_id: "EMP-1044",
+    risk_score: 48,
+    risk_level: "MEDIUM",
+    explanation: "Claimed role 'Senior Director' conflicts with registered identity profile. Pitch jitter anomaly detected.",
+    recommended_action: "CHALLENGE_CALLER",
+    verification_status: "CHALLENGE_REQUIRED",
+    is_held: false,
+    transaction_amount: 4200,
+    flags: [
+      "Moderate pitch jitter anomaly in early frames",
+      "Claimed role mismatch against registry",
+    ],
+    contributing_signals: {
+      fake_probability: 0.442,
+      speaker_similarity: 0.74,
+      speaker_match: true,
+      acoustic_anomaly: 0.45,
+      role_mismatch: true,
+    },
+    status: "OPEN",
+    is_simulated: true,
+  },
+  {
+    id: "EVT-9079-SAFE",
+    call_id: "CALL-2026-9079-NY",
+    organization_id: DEFAULT_ORG_ID,
+    event_type: "HIGH_RISK_CALL",
+    severity: "LOW",
+    timestamp: Date.now() - 60 * 60 * 1000,
+    caller_id: "+1 (212) 998-1120",
+    contact_id: "EMP-9001",
+    contact_name: "Jane Doe",
+    claimed_role: "Account Manager",
+    speaker_id: "EMP-9001",
+    risk_score: 12,
+    risk_level: "LOW",
+    explanation: "Authentic human prosody spectrum verified. Biometric voiceprint matched with 0.88 cosine similarity.",
+    recommended_action: "ALLOW",
+    verification_status: "VERIFIED",
+    is_held: false,
+    transaction_amount: 1500,
+    flags: [
+      "Authentic human prosody spectrum verified",
+      "192-D biometric cosine similarity 0.88 (Clean match)",
+    ],
+    contributing_signals: {
+      fake_probability: 0.041,
+      speaker_similarity: 0.88,
+      speaker_match: true,
+      acoustic_anomaly: 0.08,
+    },
+    status: "RESOLVED",
+    resolved_at: Date.now() - 55 * 60 * 1000,
+    resolved_by: "VoiceShieldRiskEngine",
+    is_simulated: true,
+  },
+  {
+    id: "EVT-9078-SAFE",
+    call_id: "CALL-2026-9078-UK",
+    organization_id: DEFAULT_ORG_ID,
+    event_type: "HIGH_RISK_CALL",
+    severity: "LOW",
+    timestamp: Date.now() - 3 * 3600 * 1000,
+    caller_id: "+44 20 7946 0991",
+    contact_id: "EMP-3091",
+    contact_name: "Sarah Jenkins",
+    claimed_role: "Client Relations",
+    speaker_id: "EMP-3091",
+    risk_score: 8,
+    risk_level: "LOW",
+    explanation: "Zero synthetic artifacts. High signal-to-noise ratio (28.4 dB). Clean authentic speaker.",
+    recommended_action: "ALLOW",
+    verification_status: "VERIFIED",
+    is_held: false,
+    transaction_amount: 800,
+    flags: [
+      "Zero synthetic artifacts",
+      "High signal-to-noise ratio (28.4 dB)",
+    ],
+    contributing_signals: {
+      fake_probability: 0.025,
+      speaker_similarity: 0.91,
+      speaker_match: true,
+      acoustic_anomaly: 0.05,
+    },
+    status: "RESOLVED",
+    resolved_at: Date.now() - 2.8 * 3600 * 1000,
+    resolved_by: "VoiceShieldRiskEngine",
+    is_simulated: true,
+  },
+];
+
+// Initialize matching verification sessions for seed events
+activeVerificationSessions.set("CALL-2026-9082-AZ", {
+  call_id: "CALL-2026-9082-AZ",
+  organization_id: DEFAULT_ORG_ID,
+  status: "BLOCKED",
+  recommended_action: "BLOCK",
+  risk_score: 94,
+  risk_level: "CRITICAL",
+  is_held: true,
+  hold_reason: "Call terminated and transaction blocked due to critical voice clone attack.",
+  selected_method: null,
+  in_progress_step: null,
+  audit_trail: [
+    {
+      id: "AUD-SEED-01",
+      call_id: "CALL-2026-9082-AZ",
+      timestamp: Date.now() - 2 * 60 * 1000,
+      previous_state: "NONE",
+      new_state: "BLOCKED",
+      action: "INITIALIZE_BLOCK",
+      actor: "VoiceShieldRiskEngine",
+      notes: "Automatic threat block triggered for critical deepfake voice clone.",
+      is_simulated: true,
+    },
+  ],
+  context_metadata: {
+    caller_id: "+1 (415) 890-2100",
+    claimed_role: "Chief Executive Officer",
+    requested_transaction_amount: 85000,
+    transaction_auto_hold_amount: 5000,
+  },
+  created_at: (Date.now() - 2 * 60 * 1000) / 1000,
+  updated_at: (Date.now() - 2 * 60 * 1000) / 1000,
+});
+
+activeVerificationSessions.set("CALL-2026-9081-TX", {
+  call_id: "CALL-2026-9081-TX",
+  organization_id: DEFAULT_ORG_ID,
+  status: "PENDING",
+  recommended_action: "SECONDARY_VERIFICATION",
+  risk_score: 76,
+  risk_level: "HIGH",
+  is_held: true,
+  hold_reason: "Transaction placed on HOLD pending secondary identity verification.",
+  selected_method: null,
+  in_progress_step: null,
+  audit_trail: [
+    {
+      id: "AUD-SEED-02",
+      call_id: "CALL-2026-9081-TX",
+      timestamp: Date.now() - 18 * 60 * 1000,
+      previous_state: "NONE",
+      new_state: "PENDING",
+      action: "INITIALIZE_SECONDARY_VERIFICATION",
+      actor: "VoiceShieldRiskEngine",
+      notes: "Transaction placed on HOLD pending secondary identity verification.",
+      is_simulated: true,
+    },
+  ],
+  context_metadata: {
+    caller_id: "+1 (212) 555-0199",
+    claimed_role: "Treasurer / Accounting",
+    requested_transaction_amount: 34500,
+    transaction_auto_hold_amount: 10000,
+  },
+  created_at: (Date.now() - 18 * 60 * 1000) / 1000,
+  updated_at: (Date.now() - 18 * 60 * 1000) / 1000,
+});
+
+activeVerificationSessions.set("CALL-2026-9080-CA", {
+  call_id: "CALL-2026-9080-CA",
+  organization_id: DEFAULT_ORG_ID,
+  status: "CHALLENGE_REQUIRED",
+  recommended_action: "CHALLENGE_CALLER",
+  risk_score: 48,
+  risk_level: "MEDIUM",
+  is_held: false,
+  hold_reason: null,
+  selected_method: null,
+  in_progress_step: null,
+  audit_trail: [
+    {
+      id: "AUD-SEED-03",
+      call_id: "CALL-2026-9080-CA",
+      timestamp: Date.now() - 45 * 60 * 1000,
+      previous_state: "NONE",
+      new_state: "CHALLENGE_REQUIRED",
+      action: "INITIALIZE_CHALLENGE_CALLER",
+      actor: "VoiceShieldRiskEngine",
+      notes: "Challenge caller required due to role mismatch and pitch anomaly.",
+      is_simulated: true,
+    },
+  ],
+  context_metadata: {
+    caller_id: "+1 (650) 333-8821",
+    claimed_role: "Senior Director",
+    requested_transaction_amount: 4200,
+  },
+  created_at: (Date.now() - 45 * 60 * 1000) / 1000,
+  updated_at: (Date.now() - 45 * 60 * 1000) / 1000,
+});
+
+function recordSecurityEventFromAnalysis(
+  resultData: any,
+  params: Record<string, any>,
+  reqBody: Record<string, any>,
+  enrichedContext?: EnrichedCallContext | null
+): StoredSecurityEvent | null {
+  if (!resultData || !resultData.call_id) return null;
+
+  const callId = resultData.call_id;
+  const riskScore = Number(resultData.risk_score ?? 0);
+  const riskLevel = String(resultData.risk_level ?? "LOW");
+  const recAction = String(resultData.recommended_action ?? "ALLOW");
+  const fakeProb = Number(resultData.deepfake_detection?.fake_probability ?? resultData.fake_probability ?? 0);
+  const flags = Array.isArray(resultData.flags) ? resultData.flags : [];
+  const orgId = enrichedContext?.organization_id || DEFAULT_ORG_ID;
+
+  let eventType = "HIGH_RISK_CALL";
+  let severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" = "LOW";
+
+  if (recAction === "BLOCK" || riskScore >= 85 || fakeProb >= 0.85) {
+    severity = "CRITICAL";
+    eventType = fakeProb >= 0.85 ? "DEEPFAKE_VOICE_CLONE" : recAction === "BLOCK" ? "CALL_BLOCKED" : "HIGH_RISK_CALL";
+  } else if (riskScore >= 70 || fakeProb >= 0.65 || resultData.verification_session?.is_held) {
+    severity = "HIGH";
+    if (enrichedContext?.role_mismatch) {
+      const isExec = /ceo|cfo|director|executive|treasurer|president/i.test(enrichedContext.claimed_role || "");
+      eventType = isExec ? "EXECUTIVE_IMPERSONATION" : "ROLE_MISMATCH";
+    } else if (resultData.verification_session?.is_held) {
+      eventType = "TRANSACTION_AUTO_HOLD";
+    } else {
+      eventType = "HIGH_RISK_CALL";
+    }
+  } else if (riskScore >= 35) {
+    severity = "MEDIUM";
+    if (enrichedContext?.role_mismatch) {
+      eventType = "ROLE_MISMATCH";
+    } else if (resultData.speaker_verification?.is_match === false) {
+      eventType = "SPEAKER_MISMATCH";
+    } else if (Number(resultData.acoustic_anomaly ?? 0) > 0.5) {
+      eventType = "ACOUSTIC_ANOMALY";
+    }
+  }
+
+  const isHeld = Boolean(resultData.verification_session?.is_held);
+  const holdReason = resultData.verification_session?.hold_reason || null;
+  const vStatus = resultData.verification_session?.status || (recAction === "ALLOW" ? "VERIFIED" : "PENDING");
+
+  const amount = Number(
+    enrichedContext?.requested_amount ??
+    reqBody.requested_transaction_amount ??
+    reqBody.requested_amount ??
+    params.requested_amount ??
+    0
+  );
+
+  const newEvent: StoredSecurityEvent = {
+    id: `EVT-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+    call_id: callId,
+    organization_id: orgId,
+    event_type: eventType,
+    severity,
+    timestamp: Date.now(),
+    caller_id: enrichedContext?.caller_id || params.caller_id || reqBody.caller_id || null,
+    contact_id: enrichedContext?.contact_id || params.contact_id || reqBody.contact_id || null,
+    contact_name: enrichedContext?.contact_name || null,
+    claimed_role: enrichedContext?.claimed_role || params.claimed_role || reqBody.claimed_role || null,
+    speaker_id: resultData.speaker_verification?.speaker_id || params.speaker_id || null,
+    risk_score: riskScore,
+    risk_level: riskLevel,
+    explanation: (
+      `Call evaluated with risk score ${riskScore}/100 (${riskLevel}). Action: ${recAction}. ` +
+      (flags.length > 0 ? flags.slice(0, 2).join("; ") : "Acoustic / context telemetry analyzed.")
+    ),
+    recommended_action: recAction,
+    verification_status: vStatus,
+    verification_session: resultData.verification_session || null,
+    is_held: isHeld,
+    transaction_amount: amount > 0 ? amount : null,
+    hold_reason: holdReason,
+    flags,
+    contributing_signals: {
+      fake_probability: fakeProb,
+      speaker_similarity: resultData.speaker_verification?.similarity_score,
+      speaker_match: resultData.speaker_verification?.is_match,
+      acoustic_anomaly: resultData.acoustic_anomaly,
+      role_mismatch: enrichedContext?.role_mismatch,
+    },
+    status: "OPEN",
+    is_simulated: true,
+  };
+
+  // Prepend to activeSecurityEvents (bounded to 100)
+  activeSecurityEvents.unshift(newEvent);
+  if (activeSecurityEvents.length > 100) {
+    activeSecurityEvents.pop();
+  }
+
+  return newEvent;
+}
+
+
 // 7. Live Stream Chunk (REST Fallback): /stream-chunk and /api/stream-chunk
 const handleStreamChunk = async (req: express.Request, res: express.Response) => {
   const { pcm_bytes_b64, samples, file, speaker_id, threshold, context, window_index, call_id } = req.body;
@@ -808,6 +1240,9 @@ const handleStreamChunk = async (req: express.Request, res: express.Response) =>
       window_index: window_index || 0,
       call_id,
     });
+    if (result.status === 200 && result.data?.verification_session && result.data.call_id) {
+      activeVerificationSessions.set(result.data.call_id, result.data.verification_session);
+    }
     res.status(result.status).json(result.data);
   } catch (err: any) {
     res.status(500).json({
@@ -819,6 +1254,627 @@ const handleStreamChunk = async (req: express.Request, res: express.Response) =>
 
 app.post("/stream-chunk", handleStreamChunk);
 app.post("/api/stream-chunk", handleStreamChunk);
+
+// ----------------------------------------------------
+// FEATURE 1: SECONDARY VERIFICATION WORKFLOW ENDPOINTS
+// ----------------------------------------------------
+
+// Get current verification session for a call
+app.get("/api/verification/:callId", (req: express.Request, res: express.Response) => {
+  const callId = req.params.callId;
+  const session = activeVerificationSessions.get(callId);
+  if (!session) {
+    return res.status(404).json({ error: "Verification session not found for call_id: " + callId });
+  }
+  res.json({ status: "ok", verification_session: session });
+});
+
+// Authoritative verification workflow action processor
+app.post("/api/verification/action", async (req: express.Request, res: express.Response) => {
+  try {
+    const { call_id, action, method, result, notes, actor } = req.body;
+    if (!call_id) {
+      return res.status(400).json({ error: "Missing required parameter: call_id" });
+    }
+
+    let session = activeVerificationSessions.get(call_id);
+    if (!session) {
+      // Create session if not in cache
+      session = {
+        call_id,
+        organization_id: "00000000-0000-0000-0000-000000000001",
+        status: "PENDING",
+        recommended_action: "SECONDARY_VERIFICATION",
+        risk_score: 75,
+        risk_level: "HIGH",
+        is_held: true,
+        hold_reason: "Transaction placed on HOLD pending secondary identity verification.",
+        selected_method: null,
+        in_progress_step: null,
+        audit_trail: [],
+        context_metadata: {},
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      };
+      activeVerificationSessions.set(call_id, session);
+    }
+
+    const actionUpper = String(action || "").toUpperCase();
+    const resultUpper = String(result || "").toUpperCase();
+    const actorName = actor || "SecurityOperator";
+    const now = Date.now();
+    const prevStatus = session.status;
+
+    if (actionUpper === "START" || actionUpper === "START_VERIFICATION") {
+      session.status = "VERIFICATION_IN_PROGRESS";
+      session.selected_method = method || "VERIFY_CALLER";
+      session.in_progress_step = `Executing ${method || "VERIFY_CALLER"}`;
+      session.updated_at = now;
+
+      session.audit_trail.push({
+        id: `AUD-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+        call_id,
+        timestamp: now,
+        previous_state: prevStatus,
+        new_state: session.status,
+        action: "START_VERIFICATION",
+        actor: actorName,
+        method: session.selected_method,
+        notes: notes || `Verification initiated via ${session.selected_method}.`,
+        is_simulated: true,
+      });
+    } else if (actionUpper === "SUBMIT" || actionUpper === "COMPLETE" || actionUpper === "COMPLETE_VERIFICATION") {
+      const isSuccess = resultUpper === "SUCCESS" || resultUpper === "PASS" || resultUpper === "VERIFIED";
+      if (isSuccess) {
+        session.status = "VERIFIED";
+        if (session.is_held) {
+          session.is_held = false;
+          session.hold_reason = "Hold released: Secondary verification completed successfully.";
+        }
+        session.in_progress_step = null;
+
+        if (supabase) {
+          try {
+            await supabase
+              .from("transactions")
+              .update({ status: "APPROVED", hold_reason: "Released upon verified identity." })
+              .eq("call_id", call_id);
+          } catch (e: any) {
+            console.warn("[Supabase:TransactionsUpdate]", e.message);
+          }
+        }
+      } else {
+        session.status = "FAILED";
+        if (session.is_held) {
+          session.hold_reason = "Transaction remains ON HOLD: Secondary verification challenge failed.";
+        }
+        session.in_progress_step = null;
+
+        if (supabase) {
+          try {
+            await supabase
+              .from("transactions")
+              .update({ status: "REJECTED", hold_reason: "Verification challenge failed." })
+              .eq("call_id", call_id);
+          } catch (e: any) {
+            console.warn("[Supabase:TransactionsUpdate]", e.message);
+          }
+        }
+      }
+      session.updated_at = now;
+
+      session.audit_trail.push({
+        id: `AUD-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+        call_id,
+        timestamp: now,
+        previous_state: prevStatus,
+        new_state: session.status,
+        action: isSuccess ? "VERIFICATION_SUCCESS" : "VERIFICATION_FAILURE",
+        actor: actorName,
+        method: method || session.selected_method,
+        notes: notes || (isSuccess ? "Identity verification succeeded." : "Identity verification challenge failed."),
+        is_simulated: true,
+      });
+    } else if (actionUpper === "ESCALATE" || actionUpper === "ESCALATE_TO_SUPERVISOR") {
+      session.status = "ESCALATED";
+      session.selected_method = "ESCALATE_TO_SUPERVISOR";
+      session.in_progress_step = "Pending supervisor manual investigation";
+      if (session.is_held) {
+        session.hold_reason = "Transaction ON HOLD: Escalated to supervisor for manual review.";
+      }
+      session.updated_at = now;
+
+      session.audit_trail.push({
+        id: `AUD-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+        call_id,
+        timestamp: now,
+        previous_state: prevStatus,
+        new_state: session.status,
+        action: "ESCALATE_TO_SUPERVISOR",
+        actor: actorName,
+        method: "ESCALATE_TO_SUPERVISOR",
+        notes: notes || "Escalated to Fraud Operations supervisor.",
+        is_simulated: true,
+      });
+    } else if (actionUpper === "BLOCK" || actionUpper === "BLOCK_CALL") {
+      session.status = "BLOCKED";
+      session.is_held = true;
+      session.hold_reason = notes || "Call terminated and transaction blocked due to high fraud threat.";
+      session.in_progress_step = null;
+      session.updated_at = now;
+
+      if (supabase) {
+        try {
+          await supabase
+            .from("transactions")
+            .update({ status: "REJECTED", hold_reason: "Blocked threat." })
+            .eq("call_id", call_id);
+        } catch (e: any) {
+          console.warn("[Supabase:TransactionsUpdate]", e.message);
+        }
+      }
+
+      session.audit_trail.push({
+        id: `AUD-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+        call_id,
+        timestamp: now,
+        previous_state: prevStatus,
+        new_state: session.status,
+        action: "BLOCK_CALL",
+        actor: actorName,
+        notes: notes || "Call terminated and blacklisted as voice clone attack.",
+        is_simulated: true,
+      });
+    }
+
+    // Persist to audit_logs if Supabase available
+    if (supabase) {
+      try {
+        await supabase.from("audit_logs").insert({
+          organization_id: session.organization_id,
+          action: `VERIFICATION_${session.status}`,
+          details: {
+            call_id,
+            action,
+            method,
+            result,
+            notes,
+            actor: actorName,
+            is_simulated: true,
+          },
+        });
+      } catch (e: any) {
+        // non-blocking
+      }
+    }
+
+    // Sync verification state to in-memory security events
+    for (const evt of activeSecurityEvents) {
+      if (evt.call_id === call_id) {
+        evt.verification_status = session.status;
+        evt.is_held = session.is_held;
+        evt.hold_reason = session.hold_reason;
+        evt.verification_session = session;
+        if (session.status === "VERIFIED") {
+          evt.status = "RESOLVED";
+          evt.resolved_at = Date.now();
+          evt.resolved_by = actorName;
+        } else if (session.status === "ESCALATED") {
+          evt.status = "ESCALATED";
+        }
+      }
+    }
+
+    return res.json({
+      status: "ok",
+      verification_session: session,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to process verification action" });
+  }
+});
+
+// ----------------------------------------------------
+// FEATURE 2: SECURITY EVENTS & ALERT CENTER ENDPOINTS
+// ----------------------------------------------------
+
+function computeSecurityMetrics(events: StoredSecurityEvent[]) {
+  const active_threats = events.filter(
+    (e) => e.status === "OPEN" && (e.severity === "HIGH" || e.severity === "CRITICAL")
+  ).length;
+
+  const critical_events = events.filter((e) => e.severity === "CRITICAL").length;
+
+  const calls_requiring_verification = events.filter(
+    (e) =>
+      ["SECONDARY_VERIFICATION", "CHALLENGE_CALLER", "HOLD_AND_STEP_UP"].includes(e.recommended_action) ||
+      ["PENDING", "CHALLENGE_REQUIRED", "VERIFICATION_IN_PROGRESS"].includes(e.verification_status || "")
+  ).length;
+
+  const transactions_on_hold = events.filter((e) => e.is_held).length;
+
+  const blocked_calls = events.filter(
+    (e) =>
+      e.recommended_action === "BLOCK" ||
+      e.verification_status === "BLOCKED" ||
+      e.event_type === "CALL_BLOCKED"
+  ).length;
+
+  return {
+    total_events: events.length,
+    active_threats,
+    critical_events,
+    calls_requiring_verification,
+    transactions_on_hold,
+    blocked_calls,
+  };
+}
+
+const handleGetSecurityEvents = async (req: express.Request, res: express.Response) => {
+  try {
+    // SECURITY HARDENING: Authoritative organization resolution. Never trust client organization_id.
+    const orgId = contextService.resolveAuthoritativeOrganizationId(req.query.organization_id as string);
+    const filter = (req.query.filter as string || "ALL").toUpperCase().trim();
+    const search = (req.query.search as string || "").toLowerCase().trim();
+
+    // Start with authoritative in-memory events for the organization
+    let events = activeSecurityEvents.filter((e) => e.organization_id === orgId);
+
+    // If Supabase is connected, query and enrich from alerts & calls tables
+    if (supabase) {
+      try {
+        const { data: dbAlerts, error } = await supabase
+          .from("alerts")
+          .select("*, calls(*), risk_events(*), transactions(*)")
+          .eq("organization_id", orgId)
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (!error && dbAlerts && dbAlerts.length > 0) {
+          const dbEvents: StoredSecurityEvent[] = dbAlerts.map((row: any) => {
+            const call = row.calls || {};
+            const risk = row.risk_events || {};
+            const tx = row.transactions || {};
+            return {
+              id: row.id || `EVT-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+              call_id: row.call_id || call.id || "CALL-UNKNOWN",
+              organization_id: row.organization_id || orgId,
+              event_type: row.alert_type || (row.severity === "CRITICAL" ? "DEEPFAKE_VOICE_CLONE" : "HIGH_RISK_CALL"),
+              severity: (row.severity || "HIGH").toUpperCase() as any,
+              timestamp: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+              caller_id: call.caller_id || null,
+              contact_id: call.contact_id || null,
+              contact_name: call.contact_name || null,
+              claimed_role: call.claimed_role || null,
+              speaker_id: call.speaker_id || null,
+              risk_score: Number(risk.risk_score ?? 75),
+              risk_level: risk.risk_level || (row.severity === "CRITICAL" ? "CRITICAL" : "HIGH"),
+              explanation: row.explanation || "Threat intelligence alert recorded in database.",
+              recommended_action: risk.recommended_action || "SECONDARY_VERIFICATION",
+              verification_status: row.is_resolved ? "VERIFIED" : "PENDING",
+              is_held: tx.is_held ?? false,
+              transaction_amount: tx.amount ? Number(tx.amount) : null,
+              hold_reason: tx.hold_reason || null,
+              flags: Array.isArray(row.flags) ? row.flags : [],
+              contributing_signals: row.contributing_signals || {},
+              status: row.is_resolved ? "RESOLVED" : "OPEN",
+              resolved_at: row.resolved_at ? new Date(row.resolved_at).getTime() : null,
+              resolved_by: row.resolved_by || null,
+              is_simulated: Boolean(row.is_simulated),
+            };
+          });
+
+          // Merge DB events with in-memory events without duplicates
+          const seenIds = new Set(events.map((e) => e.call_id));
+          for (const dbe of dbEvents) {
+            if (!seenIds.has(dbe.call_id)) {
+              events.push(dbe);
+              seenIds.add(dbe.call_id);
+            }
+          }
+        }
+      } catch (dbErr: any) {
+        console.warn("[SecurityEvents:SupabaseFetch]", dbErr.message);
+      }
+    }
+
+    // Attach current active verification sessions if available
+    for (const evt of events) {
+      if (evt.call_id && activeVerificationSessions.has(evt.call_id)) {
+        const sess = activeVerificationSessions.get(evt.call_id);
+        evt.verification_session = sess;
+        evt.verification_status = sess.status;
+        evt.is_held = sess.is_held;
+        evt.hold_reason = sess.hold_reason;
+      }
+    }
+
+    // Calculate full metrics before filtering
+    const summary = computeSecurityMetrics(events);
+
+    // Apply fast filter
+    let filtered = events;
+    if (filter === "CRITICAL") {
+      filtered = filtered.filter((e) => e.severity === "CRITICAL");
+    } else if (filter === "HIGH") {
+      filtered = filtered.filter((e) => e.severity === "HIGH");
+    } else if (filter === "MEDIUM") {
+      filtered = filtered.filter((e) => e.severity === "MEDIUM");
+    } else if (filter === "LOW") {
+      filtered = filtered.filter((e) => e.severity === "LOW");
+    } else if (filter === "UNRESOLVED") {
+      filtered = filtered.filter((e) => e.status === "OPEN");
+    } else if (filter === "VERIFICATION_REQUIRED") {
+      filtered = filtered.filter(
+        (e) =>
+          ["SECONDARY_VERIFICATION", "CHALLENGE_CALLER", "HOLD_AND_STEP_UP"].includes(e.recommended_action) ||
+          ["PENDING", "CHALLENGE_REQUIRED", "VERIFICATION_IN_PROGRESS", "FAILED"].includes(e.verification_status || "")
+      );
+    } else if (filter === "BLOCKED") {
+      filtered = filtered.filter(
+        (e) =>
+          e.recommended_action === "BLOCK" ||
+          e.verification_status === "BLOCKED" ||
+          e.event_type === "CALL_BLOCKED"
+      );
+    }
+
+    // Apply search query
+    if (search) {
+      filtered = filtered.filter((e) => {
+        const matchCall = (e.call_id || "").toLowerCase().includes(search);
+        const matchCaller = (e.caller_id || "").toLowerCase().includes(search);
+        const matchContact =
+          (e.contact_name || "").toLowerCase().includes(search) ||
+          (e.contact_id || "").toLowerCase().includes(search);
+        const matchRole = (e.claimed_role || "").toLowerCase().includes(search);
+        const matchType = (e.event_type || "").toLowerCase().includes(search);
+        const matchFlags = e.flags.some((f) => f.toLowerCase().includes(search));
+        const matchExpl = (e.explanation || "").toLowerCase().includes(search);
+        return matchCall || matchCaller || matchContact || matchRole || matchType || matchFlags || matchExpl;
+      });
+    }
+
+    return res.json({
+      status: "ok",
+      organization_id: orgId,
+      events: filtered,
+      summary,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to fetch security events" });
+  }
+};
+
+app.get("/api/security-events", handleGetSecurityEvents);
+app.get("/api/alerts", handleGetSecurityEvents);
+
+// Get summary metrics only
+app.get("/api/security-events/summary", async (req: express.Request, res: express.Response) => {
+  try {
+    const orgId = contextService.resolveAuthoritativeOrganizationId(req.query.organization_id as string);
+    const events = activeSecurityEvents.filter((e) => e.organization_id === orgId);
+    const summary = computeSecurityMetrics(events);
+    return res.json({ status: "ok", organization_id: orgId, summary });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to compute security metrics" });
+  }
+});
+
+// Mark security event / alert as resolved
+app.post("/api/security-events/:id/resolve", async (req: express.Request, res: express.Response) => {
+  try {
+    const eventId = req.params.id;
+    const { notes } = req.body;
+    const now = Date.now();
+
+    const event = activeSecurityEvents.find((e) => e.id === eventId || e.call_id === eventId);
+    if (event) {
+      event.status = "RESOLVED";
+      event.resolved_at = now;
+      event.resolved_by = "SecurityOperator";
+
+      // If associated with a verification session, mark verified/released
+      if (event.call_id && activeVerificationSessions.has(event.call_id)) {
+        const session = activeVerificationSessions.get(event.call_id);
+        session.status = "VERIFIED";
+        session.is_held = false;
+        session.hold_reason = null;
+        session.updated_at = now;
+        session.audit_trail.push({
+          id: `AUD-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+          call_id: event.call_id,
+          timestamp: now,
+          previous_state: session.status,
+          new_state: "VERIFIED",
+          action: "RESOLVE_INCIDENT",
+          actor: "SecurityOperator",
+          notes: notes || "Incident resolved by security operator.",
+          is_simulated: true,
+        });
+      }
+    }
+
+    if (supabase) {
+      try {
+        await supabase
+          .from("alerts")
+          .update({ is_resolved: true, resolved_at: new Date(now).toISOString() })
+          .eq("id", eventId);
+
+        await supabase.from("audit_logs").insert({
+          organization_id: event?.organization_id || DEFAULT_ORG_ID,
+          action: "RESOLVE_SECURITY_ALERT",
+          details: { event_id: eventId, notes, resolved_at: now, actor: "SecurityOperator" },
+        });
+      } catch (dbErr: any) {
+        console.warn("[SecurityEvents:SupabaseResolve]", dbErr.message);
+      }
+    }
+
+    return res.json({ status: "ok", event: event || { id: eventId, status: "RESOLVED" } });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to resolve security event" });
+  }
+});
+
+// Escalate security event to SOC Supervisor
+app.post("/api/security-events/:id/escalate", async (req: express.Request, res: express.Response) => {
+  try {
+    const eventId = req.params.id;
+    const { notes } = req.body;
+    const now = Date.now();
+
+    const event = activeSecurityEvents.find((e) => e.id === eventId || e.call_id === eventId);
+    if (event) {
+      event.status = "ESCALATED";
+      event.verification_status = "ESCALATED";
+
+      if (event.call_id && activeVerificationSessions.has(event.call_id)) {
+        const session = activeVerificationSessions.get(event.call_id);
+        session.status = "ESCALATED";
+        session.in_progress_step = "Escalated to Fraud Operations Supervisor";
+        session.updated_at = now;
+        session.audit_trail.push({
+          id: `AUD-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+          call_id: event.call_id,
+          timestamp: now,
+          previous_state: session.status,
+          new_state: "ESCALATED",
+          action: "ESCALATE_TO_SUPERVISOR",
+          actor: "SecurityOperator",
+          notes: notes || "Escalated to supervisor from Alert Center.",
+          is_simulated: true,
+        });
+      }
+    }
+
+    if (supabase) {
+      try {
+        await supabase.from("audit_logs").insert({
+          organization_id: event?.organization_id || DEFAULT_ORG_ID,
+          action: "ESCALATE_SECURITY_ALERT",
+          details: { event_id: eventId, notes, escalated_at: now, actor: "SecurityOperator" },
+        });
+      } catch (dbErr: any) {
+        console.warn("[SecurityEvents:SupabaseEscalate]", dbErr.message);
+      }
+    }
+
+    return res.json({ status: "ok", event: event || { id: eventId, status: "ESCALATED" } });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to escalate security event" });
+  }
+});
+
+// ----------------------------------------------------
+// FEATURE 3: AUTHORITATIVE POLICY ENGINE ENDPOINTS
+// ----------------------------------------------------
+
+const handleGetPolicy = async (req: express.Request, res: express.Response) => {
+  try {
+    // SECURITY HARDENING: Authoritative organization resolution. Never trust client organization_id.
+    const orgId = contextService.resolveAuthoritativeOrganizationId(req.query.organization_id as string);
+    const policy = await contextService.getOrganizationPolicy(orgId);
+    return res.json({
+      status: "ok",
+      organization_id: orgId,
+      policy,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to retrieve organization policy" });
+  }
+};
+
+const handleUpdatePolicy = async (req: express.Request, res: express.Response) => {
+  try {
+    // SECURITY HARDENING: Authoritative organization resolution. Never trust client organization_id.
+    const orgId = contextService.resolveAuthoritativeOrganizationId(
+      req.body?.organization_id || (req.query?.organization_id as string)
+    );
+    const actor = (req.body?.actor as string) || "SecurityAdmin";
+    const updates = req.body?.policy || req.body || {};
+
+    const result = await contextService.updateOrganizationPolicy(orgId, updates, actor);
+
+    return res.json({
+      status: "ok",
+      organization_id: orgId,
+      policy: result.policy,
+      changes: result.changes,
+      audit_entry: result.auditEntry,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to update organization policy" });
+  }
+};
+
+app.get("/api/policy", handleGetPolicy);
+app.get("/api/organization-policy", handleGetPolicy);
+
+app.put("/api/policy", handleUpdatePolicy);
+app.post("/api/policy", handleUpdatePolicy);
+app.put("/api/organization-policy", handleUpdatePolicy);
+app.post("/api/organization-policy", handleUpdatePolicy);
+
+app.get("/api/policy/audit-logs", async (req: express.Request, res: express.Response) => {
+  try {
+    const orgId = contextService.resolveAuthoritativeOrganizationId(req.query.organization_id as string);
+    const logs = await contextService.getAuditLogs(orgId);
+    return res.json({
+      status: "ok",
+      organization_id: orgId,
+      audit_logs: logs,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to retrieve policy audit logs" });
+  }
+});
+
+app.get("/api/audit-logs", async (req: express.Request, res: express.Response) => {
+  try {
+    const orgId = contextService.resolveAuthoritativeOrganizationId(req.query.organization_id as string);
+    const logs = await contextService.getAuditLogs(orgId);
+    return res.json({
+      status: "ok",
+      organization_id: orgId,
+      audit_logs: logs,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to retrieve audit logs" });
+  }
+});
+
+app.post("/api/policy/reset", async (req: express.Request, res: express.Response) => {
+  try {
+    const orgId = contextService.resolveAuthoritativeOrganizationId(
+      req.body?.organization_id || (req.query?.organization_id as string)
+    );
+    const actor = (req.body?.actor as string) || "SecurityAdmin";
+    const defaultVals = {
+      fake_prob_critical_threshold: 0.85,
+      fake_prob_warn_threshold: 0.50,
+      speaker_verification_strictness: 0.65,
+      acoustic_anomaly_sensitivity: 0.70,
+      transaction_auto_hold_amount: 500000.0,
+      step_up_verification_required: true,
+      auto_block_on_critical_deepfake: true,
+    };
+
+    const result = await contextService.updateOrganizationPolicy(orgId, defaultVals, actor);
+    return res.json({
+      status: "ok",
+      organization_id: orgId,
+      policy: result.policy,
+      changes: result.changes,
+      audit_entry: result.auditEntry,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to reset organization policy" });
+  }
+});
+
+
 
 // ----------------------------------------------------
 // WEBSOCKET LIVE STREAMING ENDPOINT (/ws/live-stream)
@@ -904,9 +1960,16 @@ function setupLiveStreamingWebSocket(server: http.Server) {
                 deepfake_detection: result.data.deepfake_detection,
                 speaker_verification: result.data.speaker_verification,
                 audio_metrics: result.data.audio_metrics,
+                speech_profile: result.data.speech_profile,
+                language_profile: result.data.speech_profile,
+                verification_session: result.data.verification_session,
                 timestamp: Date.now(),
               })
             );
+
+            if (result.data?.verification_session) {
+              activeVerificationSessions.set(sessionId, result.data.verification_session);
+            }
 
             // Record threat intelligence if window has critical risk
             if (enrichedContextCache && result.data.risk_score >= 70) {
@@ -985,6 +2048,13 @@ function setupLiveStreamingWebSocket(server: http.Server) {
                 suspicious_keywords_found: msg.suspicious_keywords_found || callContext.suspicious_keywords_found,
                 is_caller_recognized: msg.is_caller_recognized ?? callContext.is_caller_recognized,
                 is_previously_flagged: msg.is_previously_flagged ?? callContext.is_previously_flagged,
+                selected_language: msg.selected_language || msg.language || callContext.selected_language || callContext.language,
+                language: msg.language || msg.selected_language || callContext.language || callContext.selected_language,
+                detected_language: msg.detected_language || callContext.detected_language,
+                language_confidence: msg.language_confidence || callContext.language_confidence,
+                accent_region: msg.accent_region || msg.accent_profile || callContext.accent_region || callContext.accent_profile,
+                accent_profile: msg.accent_profile || msg.accent_region || callContext.accent_profile || callContext.accent_region,
+                transcript_language: msg.transcript_language || callContext.transcript_language,
               });
             } catch (err: any) {
               console.warn("[WebSocket:ContextEnrichError]", err.message);
@@ -1007,6 +2077,9 @@ function setupLiveStreamingWebSocket(server: http.Server) {
                       is_previously_flagged: enrichedContextCache.is_previously_flagged,
                       role_mismatch: enrichedContextCache.role_mismatch,
                       context_source: enrichedContextCache.context_source,
+                      selected_language: enrichedContextCache.selected_language,
+                      language: enrichedContextCache.language,
+                      accent_region: enrichedContextCache.accent_region,
                       policy_thresholds: {
                         fake_prob_critical: enrichedContextCache.policy.fake_prob_critical_threshold,
                         fake_prob_warn: enrichedContextCache.policy.fake_prob_warn_threshold,
@@ -1022,7 +2095,7 @@ function setupLiveStreamingWebSocket(server: http.Server) {
             // fraud_history_count, has_prior_fraud_history, recent_fraud_types, transaction_auto_hold_amount, policy, role_mismatch)
             const updates = (msg.context || msg.payload) as Record<string, any>;
 
-            // Allow only legitimate call-intent fields:
+            // Allow only legitimate call-intent and speech profile fields:
             if (updates.claimed_role !== undefined) {
               callContext.claimed_role = updates.claimed_role ? String(updates.claimed_role) : null;
             }
@@ -1051,6 +2124,27 @@ function setupLiveStreamingWebSocket(server: http.Server) {
             if (updates.suspicious_keywords_found !== undefined && Array.isArray(updates.suspicious_keywords_found)) {
               callContext.suspicious_keywords_found = updates.suspicious_keywords_found;
             }
+            if (updates.selected_language !== undefined) {
+              callContext.selected_language = updates.selected_language ? String(updates.selected_language) : "Auto Detect";
+            }
+            if (updates.language !== undefined) {
+              callContext.language = updates.language ? String(updates.language) : "Auto Detect";
+            }
+            if (updates.detected_language !== undefined) {
+              callContext.detected_language = updates.detected_language ? String(updates.detected_language) : null;
+            }
+            if (updates.language_confidence !== undefined) {
+              callContext.language_confidence = typeof updates.language_confidence === "number" ? updates.language_confidence : parseFloat(updates.language_confidence);
+            }
+            if (updates.accent_region !== undefined) {
+              callContext.accent_region = updates.accent_region ? String(updates.accent_region) : null;
+            }
+            if (updates.accent_profile !== undefined) {
+              callContext.accent_profile = updates.accent_profile ? String(updates.accent_profile) : null;
+            }
+            if (updates.transcript_language !== undefined) {
+              callContext.transcript_language = updates.transcript_language ? String(updates.transcript_language) : null;
+            }
 
             try {
               // Re-enrich using authoritative server service
@@ -1066,6 +2160,13 @@ function setupLiveStreamingWebSocket(server: http.Server) {
                 urgency_reason: callContext.urgency_reason,
                 transcript_text: callContext.transcript_text,
                 suspicious_keywords_found: callContext.suspicious_keywords_found,
+                selected_language: callContext.selected_language || callContext.language,
+                language: callContext.language || callContext.selected_language,
+                detected_language: callContext.detected_language,
+                language_confidence: callContext.language_confidence,
+                accent_region: callContext.accent_region || callContext.accent_profile,
+                accent_profile: callContext.accent_profile || callContext.accent_region,
+                transcript_language: callContext.transcript_language,
               });
               ws.send(
                 JSON.stringify({

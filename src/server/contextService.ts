@@ -40,6 +40,14 @@ export interface EnrichedCallContext {
   context_source: "SUPABASE_INTELLIGENCE" | "REQUEST_PAYLOAD_FALLBACK" | "DEFAULT";
   context_available: boolean;
   policy: OrganizationPolicy;
+  // Multilingual / Indian Speech Metadata (Non-Authoritative)
+  selected_language?: string | null;
+  language?: string | null;
+  detected_language?: string | null;
+  language_confidence?: number | null;
+  accent_region?: string | null;
+  accent_profile?: string | null;
+  transcript_language?: string | null;
 }
 
 export interface ContextRetrievalParams {
@@ -58,6 +66,14 @@ export interface ContextRetrievalParams {
   suspicious_keywords_found?: string[];
   is_caller_recognized?: boolean;
   is_previously_flagged?: boolean;
+  // Multilingual Metadata
+  selected_language?: string;
+  language?: string;
+  detected_language?: string;
+  language_confidence?: number;
+  accent_region?: string;
+  accent_profile?: string;
+  transcript_language?: string;
 }
 
 export const DEFAULT_ORG_ID = process.env.DEFAULT_ORGANIZATION_ID || "00000000-0000-0000-0000-000000000001";
@@ -76,6 +92,7 @@ const DEFAULT_POLICY: OrganizationPolicy = {
 export class ContextRetrievalService {
   private supabase: SupabaseClient | null;
   private policyCache: Map<string, { policy: OrganizationPolicy; cachedAt: number }> = new Map();
+  private auditLogCache: any[] = [];
   private readonly CACHE_TTL_MS = 60000; // 1 minute cache for policies
 
   constructor(supabaseClient: SupabaseClient | null) {
@@ -161,6 +178,199 @@ export class ContextRetrievalService {
     }
 
     return { ...DEFAULT_POLICY, organization_id: orgId };
+  }
+
+  /**
+   * Authoritatively updates organization policies with strict validation and audit logging.
+   */
+  public async updateOrganizationPolicy(
+    orgId: string,
+    updates: Partial<OrganizationPolicy>,
+    actor: string = "SecurityAdmin"
+  ): Promise<{ policy: OrganizationPolicy; auditEntry: any; changes: Array<{ field: string; prev: any; next: any }> }> {
+    const current = await this.getOrganizationPolicy(orgId);
+    const changes: Array<{ field: string; prev: any; next: any }> = [];
+
+    const validated: OrganizationPolicy = {
+      id: current.id,
+      organization_id: orgId,
+      fake_prob_critical_threshold: current.fake_prob_critical_threshold,
+      fake_prob_warn_threshold: current.fake_prob_warn_threshold,
+      speaker_verification_strictness: current.speaker_verification_strictness,
+      acoustic_anomaly_sensitivity: current.acoustic_anomaly_sensitivity,
+      transaction_auto_hold_amount: current.transaction_auto_hold_amount,
+      step_up_verification_required: current.step_up_verification_required,
+      auto_block_on_critical_deepfake: current.auto_block_on_critical_deepfake,
+    };
+
+    if (updates.fake_prob_critical_threshold !== undefined) {
+      const val = Math.max(0.5, Math.min(0.99, Number(updates.fake_prob_critical_threshold)));
+      if (val !== current.fake_prob_critical_threshold) {
+        changes.push({ field: "fake_prob_critical_threshold", prev: current.fake_prob_critical_threshold, next: val });
+        validated.fake_prob_critical_threshold = val;
+      }
+    }
+
+    if (updates.fake_prob_warn_threshold !== undefined) {
+      const val = Math.max(0.1, Math.min(validated.fake_prob_critical_threshold, Number(updates.fake_prob_warn_threshold)));
+      if (val !== current.fake_prob_warn_threshold) {
+        changes.push({ field: "fake_prob_warn_threshold", prev: current.fake_prob_warn_threshold, next: val });
+        validated.fake_prob_warn_threshold = val;
+      }
+    }
+
+    if (updates.speaker_verification_strictness !== undefined) {
+      const val = Math.max(0.4, Math.min(0.95, Number(updates.speaker_verification_strictness)));
+      if (val !== current.speaker_verification_strictness) {
+        changes.push({ field: "speaker_verification_strictness", prev: current.speaker_verification_strictness, next: val });
+        validated.speaker_verification_strictness = val;
+      }
+    }
+
+    if (updates.acoustic_anomaly_sensitivity !== undefined) {
+      const val = Math.max(0.4, Math.min(0.99, Number(updates.acoustic_anomaly_sensitivity)));
+      if (val !== current.acoustic_anomaly_sensitivity) {
+        changes.push({ field: "acoustic_anomaly_sensitivity", prev: current.acoustic_anomaly_sensitivity, next: val });
+        validated.acoustic_anomaly_sensitivity = val;
+      }
+    }
+
+    if (updates.transaction_auto_hold_amount !== undefined) {
+      const val = Math.max(0, Number(updates.transaction_auto_hold_amount));
+      if (val !== current.transaction_auto_hold_amount) {
+        changes.push({ field: "transaction_auto_hold_amount", prev: current.transaction_auto_hold_amount, next: val });
+        validated.transaction_auto_hold_amount = val;
+      }
+    }
+
+    if (updates.step_up_verification_required !== undefined) {
+      const val = Boolean(updates.step_up_verification_required);
+      if (val !== current.step_up_verification_required) {
+        changes.push({ field: "step_up_verification_required", prev: current.step_up_verification_required, next: val });
+        validated.step_up_verification_required = val;
+      }
+    }
+
+    if (updates.auto_block_on_critical_deepfake !== undefined) {
+      const val = Boolean(updates.auto_block_on_critical_deepfake);
+      if (val !== current.auto_block_on_critical_deepfake) {
+        changes.push({ field: "auto_block_on_critical_deepfake", prev: current.auto_block_on_critical_deepfake, next: val });
+        validated.auto_block_on_critical_deepfake = val;
+      }
+    }
+
+    // Cache updated policy in memory immediately
+    this.policyCache.set(orgId, { policy: validated, cachedAt: Date.now() });
+
+    const auditEntry = {
+      id: `AUD-POL-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+      organization_id: orgId,
+      actor,
+      action: "UPDATE_ORGANIZATION_POLICY",
+      resource_type: "organization_policies",
+      timestamp: Date.now(),
+      changes,
+      policy: validated,
+    };
+
+    // If Supabase is connected, persist to DB and write audit log
+    if (this.supabase) {
+      try {
+        const { error: upsertError } = await this.supabase
+          .from("organization_policies")
+          .upsert(
+            {
+              organization_id: orgId,
+              fake_prob_critical_threshold: validated.fake_prob_critical_threshold,
+              fake_prob_warn_threshold: validated.fake_prob_warn_threshold,
+              speaker_verification_strictness: validated.speaker_verification_strictness,
+              acoustic_anomaly_sensitivity: validated.acoustic_anomaly_sensitivity,
+              transaction_auto_hold_amount: validated.transaction_auto_hold_amount,
+              step_up_verification_required: validated.step_up_verification_required,
+              auto_block_on_critical_deepfake: validated.auto_block_on_critical_deepfake,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "organization_id" }
+          );
+
+        if (upsertError) {
+          console.warn("[ContextService:updatePolicy] Error upserting policy in Supabase:", upsertError.message);
+        }
+
+        await this.supabase.from("audit_logs").insert({
+          organization_id: orgId,
+          actor_role: "SECURITY_ADMIN",
+          action: "UPDATE_ORGANIZATION_POLICY",
+          resource_type: "organization_policies",
+          resource_id: validated.id || orgId,
+          details: {
+            actor,
+            timestamp: Date.now(),
+            changes,
+            updated_policy: validated,
+          },
+        });
+      } catch (dbErr: any) {
+        console.warn("[ContextService:updatePolicy] Warning persisting policy to Supabase:", dbErr.message);
+      }
+    }
+
+    // Always retain in-memory audit trail
+    this.auditLogCache.unshift(auditEntry);
+    if (this.auditLogCache.length > 200) {
+      this.auditLogCache.pop();
+    }
+
+    return { policy: validated, auditEntry, changes };
+  }
+
+  /**
+   * Retrieves audit logs for an organization.
+   */
+  public async getAuditLogs(orgId: string): Promise<any[]> {
+    const memoryLogs = this.auditLogCache.filter((l) => l.organization_id === orgId);
+
+    if (!this.supabase) {
+      return memoryLogs;
+    }
+
+    try {
+      const { data, error } = await this.supabase
+        .from("audit_logs")
+        .select("*")
+        .eq("organization_id", orgId)
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (!error && data) {
+        const dbLogs = data.map((d: any) => ({
+          id: d.id,
+          organization_id: d.organization_id,
+          actor: d.details?.actor || d.actor_role || "SecurityAdmin",
+          action: d.action,
+          resource_type: d.resource_type,
+          timestamp: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
+          changes: d.details?.changes || [],
+          policy: d.details?.updated_policy || null,
+          details: d.details || {},
+        }));
+
+        // Merge DB logs and memory logs without duplicates
+        const seen = new Set(dbLogs.map((l: any) => l.id));
+        const merged = [...dbLogs];
+        for (const ml of memoryLogs) {
+          if (!seen.has(ml.id)) {
+            merged.push(ml);
+            seen.add(ml.id);
+          }
+        }
+        return merged.sort((a, b) => b.timestamp - a.timestamp);
+      }
+    } catch (err: any) {
+      console.warn("[ContextService:getAuditLogs] Warning reading audit logs from DB:", err.message);
+    }
+
+    return memoryLogs;
   }
 
   /**
@@ -331,6 +541,13 @@ export class ContextRetrievalService {
         context_source: "SUPABASE_INTELLIGENCE",
         context_available: true,
         policy,
+        selected_language: params.selected_language || params.language || "Auto Detect",
+        language: params.language || params.selected_language || "Auto Detect",
+        detected_language: params.detected_language ?? null,
+        language_confidence: params.language_confidence ?? null,
+        accent_region: params.accent_region || params.accent_profile || null,
+        accent_profile: params.accent_profile || params.accent_region || null,
+        transcript_language: params.transcript_language ?? null,
       };
     } else {
       // --- FALLBACK MODE (DB unavailable or unconfigured) ---
@@ -361,6 +578,13 @@ export class ContextRetrievalService {
         context_source: "REQUEST_PAYLOAD_FALLBACK",
         context_available: false,
         policy,
+        selected_language: params.selected_language || params.language || "Auto Detect",
+        language: params.language || params.selected_language || "Auto Detect",
+        detected_language: params.detected_language ?? null,
+        language_confidence: params.language_confidence ?? null,
+        accent_region: params.accent_region || params.accent_profile || null,
+        accent_profile: params.accent_profile || params.accent_region || null,
+        transcript_language: params.transcript_language ?? null,
       };
     }
   }

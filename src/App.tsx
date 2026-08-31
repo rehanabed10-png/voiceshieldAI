@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Header } from "./components/Header";
+import { Sidebar, NavTab } from "./components/Sidebar";
 import { AudioUpload } from "./components/AudioUpload";
 import { ContextForm } from "./components/ContextForm";
 import { ProcessingView } from "./components/ProcessingView";
@@ -7,6 +8,8 @@ import { AnalysisResult } from "./components/AnalysisResult";
 import { ErrorAlert } from "./components/ErrorAlert";
 import { SpeakerProfiles } from "./components/SpeakerProfiles";
 import { LiveAnalysisView } from "./components/LiveAnalysisView";
+import { SecurityEventsView } from "./components/SecurityEventsView";
+import { PolicyConfigView } from "./components/PolicyConfigView";
 import {
   AnalyzeResponse,
   CallContextState,
@@ -24,8 +27,8 @@ import { ShieldCheck, ArrowRight, Activity } from "lucide-react";
 
 export default function App() {
   // Global Navigation
-  const [activeTab, setActiveTab] = useState<"analysis" | "live" | "speakers">("analysis");
-
+  const [activeTab, setActiveTab] = useState<NavTab>("analysis");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Health & Catalog Data
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -130,12 +133,12 @@ export default function App() {
   };
 
   return (
-    <div id="voiceshield-root" className="min-h-screen relative overflow-x-hidden font-sans text-slate-900 bg-[#f8fafc] flex flex-col selection:bg-blue-500 selection:text-white">
+    <div id="voiceshield-root" className="min-h-screen relative overflow-x-hidden font-sans text-slate-100 bg-[#070913] flex flex-col selection:bg-purple-500 selection:text-white">
       {/* Dynamic Ambient Blur Blobs */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="ambient-blob bg-blue-300/40 w-[550px] h-[550px] -top-40 -left-20" />
-        <div className="ambient-blob bg-emerald-200/40 w-[500px] h-[500px] top-1/3 -right-32" />
-        <div className="ambient-blob bg-indigo-200/30 w-[600px] h-[600px] -bottom-40 left-1/4" />
+        <div className="ambient-blob bg-purple-900/20 w-[650px] h-[650px] -top-40 -left-20 animate-pulse" />
+        <div className="ambient-blob bg-indigo-900/25 w-[550px] h-[550px] top-1/3 -right-32 animate-pulse" style={{ animationDelay: "2s" }} />
+        <div className="ambient-blob bg-cyan-900/15 w-[700px] h-[700px] -bottom-40 left-1/4 animate-pulse" style={{ animationDelay: "4s" }} />
       </div>
 
       {/* Top Navigation Bar */}
@@ -146,119 +149,140 @@ export default function App() {
         enrolledCount={speakers.length}
       />
 
-      {/* Main Content Container */}
-      <main className="flex-1 relative z-10 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        
-        {/* Tab 1: Threat Analysis Dashboard */}
-        {activeTab === "analysis" && (
-          <div className="space-y-6">
-            
-            {/* 1. Audio Upload & Selection Card */}
-            <div className="space-y-4">
-              <AudioUpload
-                selectedFile={selectedFile}
-                sampleName={sampleName}
-                onFileSelected={handleFileSelected}
-                onClear={handleClear}
-                samples={samples}
-                onSelectSample={handleSelectSample}
-                isProcessing={isProcessing}
-              />
-            </div>
+      {/* Main Layout Area with Responsive Sidebar + Content */}
+      <div className="flex-1 flex w-full relative z-10">
+        {/* Desktop Collapsible Sidebar */}
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          enrolledCount={speakers.length}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        />
 
-            {/* 2. Audio Selected Controls & Fraud Context Configurator */}
-            {selectedFile && !result && !error && (
-              <div id="analysis-controls-section" className="space-y-4">
-                
-                {/* Optional Anti-Fraud Context & Biometric Threshold */}
-                <ContextForm
-                  context={context}
-                  onChange={handleContextChange}
-                  enrolledSpeakers={speakers}
-                  disabled={isProcessing}
+        {/* Main Content Container */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 overflow-y-auto">
+          
+          {/* Tab 1: Threat Analysis Dashboard */}
+          {activeTab === "analysis" && (
+            <div className="space-y-6">
+              
+              {/* 1. Audio Upload & Selection Card */}
+              <div className="space-y-4">
+                <AudioUpload
+                  selectedFile={selectedFile}
+                  sampleName={sampleName}
+                  onFileSelected={handleFileSelected}
+                  onClear={handleClear}
+                  samples={samples}
+                  onSelectSample={handleSelectSample}
+                  isProcessing={isProcessing}
                 />
+              </div>
 
-                {/* Primary Analyze CTA Button */}
-                {!isProcessing && (
-                  <div className="flex justify-end pt-2">
-                    <button
-                      id="btn-analyze-audio"
-                      onClick={handleRunAnalysis}
-                      disabled={isProcessing}
-                      className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-blue-500/25 transition-all active:scale-[0.98]"
-                    >
-                      <ShieldCheck className="w-5 h-5" />
-                      Execute Threat Analysis
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
+              {/* 2. Audio Selected Controls & Fraud Context Configurator */}
+              {selectedFile && !result && !error && (
+                <div id="analysis-controls-section" className="space-y-4">
+                  
+                  {/* Optional Anti-Fraud Context & Biometric Threshold */}
+                  <ContextForm
+                    context={context}
+                    onChange={handleContextChange}
+                    enrolledSpeakers={speakers}
+                    disabled={isProcessing}
+                  />
+
+                  {/* Primary Analyze CTA Button */}
+                  {!isProcessing && (
+                    <div className="flex justify-end pt-2">
+                      <button
+                        id="btn-analyze-audio"
+                        onClick={handleRunAnalysis}
+                        disabled={isProcessing}
+                        className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-purple-500/25 transition-all squish-btn font-mono"
+                      >
+                        <ShieldCheck className="w-5 h-5 text-cyan-300" />
+                        Execute Threat Analysis
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+              {/* 3. Processing State View */}
+              {isProcessing && <ProcessingView />}
+
+              {/* 4. Analysis Results (Low-Risk, High-Risk, Suspicious) */}
+              {result && !isProcessing && (
+                <AnalysisResult result={result} onReset={handleClear} />
+              )}
+
+              {/* 5. Error State Container */}
+              {error && !isProcessing && (
+                <ErrorAlert error={error} onReset={handleClear} />
+              )}
+
+              {/* 6. Empty Dashboard Placeholder State (When no audio is selected yet) */}
+              {!selectedFile && !isProcessing && !result && !error && (
+                <div
+                  id="empty-dashboard-guide"
+                  className="glass-card rounded-2xl p-8 sm:p-10 text-center space-y-4 shadow-xl border border-white/10"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 mx-auto shadow-inner">
+                    <Activity className="w-7 h-7" />
                   </div>
-                )}
-
-              </div>
-            )}
-
-            {/* 3. Processing State View */}
-            {isProcessing && <ProcessingView />}
-
-            {/* 4. Analysis Results (Low-Risk, High-Risk, Suspicious) */}
-            {result && !isProcessing && (
-              <AnalysisResult result={result} onReset={handleClear} />
-            )}
-
-            {/* 5. Error State Container */}
-            {error && !isProcessing && (
-              <ErrorAlert error={error} onReset={handleClear} />
-            )}
-
-            {/* 6. Empty Dashboard Placeholder State (When no audio is selected yet) */}
-            {!selectedFile && !isProcessing && !result && !error && (
-              <div
-                id="empty-dashboard-guide"
-                className="glass-card rounded-2xl p-8 sm:p-10 text-center space-y-4 shadow-lg border border-white/80"
-              >
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 mx-auto shadow-sm">
-                  <Activity className="w-7 h-7" />
+                  <div className="space-y-1.5 font-mono">
+                    <h3 className="text-base font-bold text-white">
+                      Real-Time Pipeline Standing By
+                    </h3>
+                    <p className="text-xs text-slate-400 max-w-xl mx-auto leading-relaxed">
+                      Upload an audio stream recording or select one of the curated test samples above to evaluate synthetic voice likelihood, 192-D biometric voiceprint match, and multi-signal financial fraud risk.
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <h3 className="text-base font-bold text-slate-900">
-                    Real-Time Pipeline Standing By
-                  </h3>
-                  <p className="text-xs text-slate-600 max-w-xl mx-auto leading-relaxed">
-                    Upload an audio stream recording or select one of the curated test samples above to evaluate synthetic voice likelihood, 192-D biometric voiceprint match, and multi-signal financial fraud risk.
-                  </p>
-                </div>
-              </div>
-            )}
+              )}
 
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* Tab 2: Live Real-Time Call Monitor (Phase 7A) */}
-        {activeTab === "live" && (
-          <LiveAnalysisView
-            speakers={speakers}
-            samples={samples}
-            context={context}
-            onContextChange={handleContextChange}
-          />
-        )}
+          {/* Tab 2: Live Real-Time Call Monitor */}
+          {activeTab === "live" && (
+            <LiveAnalysisView
+              speakers={speakers}
+              samples={samples}
+              context={context}
+              onContextChange={handleContextChange}
+            />
+          )}
 
-        {/* Tab 3: Speaker Biometric Profiles Registry (Phase 5) */}
-        {activeTab === "speakers" && (
-          <SpeakerProfiles
-            speakers={speakers}
-            onRefreshSpeakers={() => fetchSpeakers().then(setSpeakers)}
-          />
-        )}
+          {/* Tab 3: Speaker Biometric Profiles Registry */}
+          {activeTab === "speakers" && (
+            <SpeakerProfiles
+              speakers={speakers}
+              onRefreshSpeakers={() => fetchSpeakers().then(setSpeakers)}
+            />
+          )}
 
+          {/* Tab 4: Security Events & Audit Trail */}
+          {activeTab === "security" && (
+            <SecurityEventsView />
+          )}
 
-      </main>
+          {/* Tab 5: Policy Engine Configuration */}
+          {activeTab === "policy" && (
+            <PolicyConfigView />
+          )}
+
+        </main>
+      </div>
 
       {/* Footer */}
-      <footer className="w-full relative z-10 border-t border-slate-200 bg-white/70 backdrop-blur-md py-4 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 font-medium">
-          <span>VoiceShield &bull; SIH 2026 Problem Statement 26104</span>
-          <span className="font-mono text-[11px] text-slate-600">Wav2Vec2 Deepfake Detector + ECAPA-TDNN Speaker Verifier</span>
+      <footer className="w-full relative z-10 border-t border-white/10 bg-black/40 backdrop-blur-md py-4 text-center text-xs text-slate-400">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 font-mono">
+          <span>VoiceShield &bull; Multi-Signal Anti-Spoofing & Biometric Verification</span>
+          <span className="text-[11px] text-purple-400">Wav2Vec2 Deepfake + ECAPA-TDNN Biometrics + Acoustic Prosody</span>
         </div>
       </footer>
     </div>

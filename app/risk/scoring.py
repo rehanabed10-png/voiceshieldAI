@@ -148,10 +148,19 @@ class VoiceShieldRiskEngine:
         else:
             return "HIGH"
 
-    def determine_action(self, risk_level: str, flags: List[str]) -> str:
+    def determine_action(
+        self,
+        risk_level: str,
+        flags: List[str],
+        auto_block: bool = False,
+        is_auto_hold: bool = False,
+        step_up_required: bool = True,
+    ) -> str:
         """
-        Determines the recommended security workflow action.
+        Determines the recommended security workflow action based on risk level and policy.
         """
+        if auto_block or risk_level == "CRITICAL":
+            return "BLOCK"
         if risk_level == "HIGH":
             return "SECONDARY_VERIFICATION"
         elif risk_level == "MEDIUM":
@@ -164,6 +173,7 @@ class VoiceShieldRiskEngine:
         signals: RiskSignals,
         context_reasons: Optional[List[str]] = None,
         prosody_reasons: Optional[List[str]] = None,
+        policy_context: Optional[CallContext] = None,
     ) -> RiskAssessment:
         """
         Evaluates pre-assembled risk signals and returns a comprehensive RiskAssessment.
@@ -172,10 +182,19 @@ class VoiceShieldRiskEngine:
         rounded_score = int(round(raw_score))
         risk_level = self.determine_risk_level(raw_score)
 
+        # Policy thresholds with safe fallbacks
+        fake_crit_thresh = policy_context.fake_prob_critical_threshold if policy_context else 0.85
+        fake_warn_thresh = policy_context.fake_prob_warn_threshold if policy_context else self.config.fake_prob_flag_threshold
+        acoustic_sens_thresh = policy_context.acoustic_anomaly_sensitivity if policy_context else self.config.acoustic_anomaly_flag_threshold
+        auto_block_crit = policy_context.auto_block_on_critical_deepfake if policy_context else False
+        step_up_required = policy_context.step_up_verification_required if policy_context else True
+
         # Collect explainable diagnostic flags
         flags: List[str] = []
 
-        if signals.fake_probability >= self.config.fake_prob_flag_threshold:
+        if policy_context and signals.fake_probability >= fake_crit_thresh:
+            flags.append(f"Critical synthetic voice clone detected ({signals.fake_probability * 100:.1f}%)")
+        elif signals.fake_probability >= fake_warn_thresh:
             flags.append(f"High synthetic voice probability ({signals.fake_probability * 100:.1f}%)")
         elif signals.fake_probability >= 0.35:
             flags.append(f"Elevated synthetic voice indicators ({signals.fake_probability * 100:.1f}%)")
@@ -183,7 +202,7 @@ class VoiceShieldRiskEngine:
         if int(signals.speaker_mismatch) == 1:
             flags.append("Speaker mismatch (voice biometrics do not match claimed profile)")
 
-        if signals.acoustic_anomaly >= self.config.acoustic_anomaly_flag_threshold:
+        if signals.acoustic_anomaly >= acoustic_sens_thresh:
             if prosody_reasons:
                 flags.extend(prosody_reasons)
             else:
@@ -195,7 +214,22 @@ class VoiceShieldRiskEngine:
             else:
                 flags.append("Suspicious transaction or authority context")
 
-        recommended_action = self.determine_action(risk_level, flags)
+        # Determine auto-block and auto-hold conditions from policy
+        auto_block_trigger = bool(
+            policy_context and auto_block_crit and signals.fake_probability >= fake_crit_thresh
+        )
+        is_auto_hold_trigger = False
+        if policy_context and policy_context.requested_transaction_amount and policy_context.transaction_auto_hold_amount:
+            if policy_context.requested_transaction_amount >= policy_context.transaction_auto_hold_amount:
+                is_auto_hold_trigger = True
+
+        recommended_action = self.determine_action(
+            risk_level=risk_level,
+            flags=flags,
+            auto_block=auto_block_trigger,
+            is_auto_hold=is_auto_hold_trigger,
+            step_up_required=step_up_required,
+        )
 
         return RiskAssessment(
             risk_score=rounded_score,
@@ -215,6 +249,9 @@ class VoiceShieldRiskEngine:
                     "low_max": self.config.low_threshold,
                     "medium_max": self.config.medium_threshold,
                     "high_min": self.config.medium_threshold + 1,
+                    "fake_prob_critical": fake_crit_thresh,
+                    "fake_prob_warn": fake_warn_thresh,
+                    "acoustic_sensitivity": acoustic_sens_thresh,
                 },
                 "raw_calculated_score": round(raw_score, 2),
                 "is_prototype_weights": True,
@@ -255,5 +292,6 @@ class VoiceShieldRiskEngine:
             signals,
             context_reasons=context_reasons,
             prosody_reasons=prosody_reasons,
+            policy_context=context,
         )
 

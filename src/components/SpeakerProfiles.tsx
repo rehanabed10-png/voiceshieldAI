@@ -103,30 +103,30 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
     <div id="speaker-profiles-view" className="space-y-6">
       
       {/* Privacy Guarantee Header Banner */}
-      <div className="glass-card rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-white/80 shadow-md">
+      <div className="glass-card rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-white/10 shadow-xl">
         <div className="flex items-start gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 shrink-0 mt-0.5 shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0 mt-0.5 shadow-sm">
             <Shield className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-slate-900">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-base font-bold text-white">
                 Biometric Speaker Verification Registry (Phase 5)
               </h2>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
                 ECAPA-TDNN
               </span>
             </div>
-            <p className="text-xs text-slate-600 mt-1 max-w-2xl">
+            <p className="text-xs text-slate-400 mt-1 max-w-2xl">
               Extracts 192-dimensional L2-normalized vector embeddings. 
-              <strong className="text-slate-800"> Zero raw audio is stored:</strong> reference audio arrays are discarded immediately after embedding computation to protect privacy.
+              <strong className="text-slate-200"> Zero raw audio is stored:</strong> reference audio arrays are discarded immediately after embedding computation to protect privacy.
             </p>
           </div>
         </div>
 
         <button
           onClick={onRefreshSpeakers}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold transition-all shadow-sm self-start md:self-center shrink-0 active:scale-95"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-semibold font-mono transition-all shadow-sm self-start md:self-center shrink-0 squish-btn"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           Refresh Store ({speakers.length})
@@ -136,23 +136,23 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Card 1: Enroll Genuine Speaker */}
-        <div id="enrollment-card" className="glass-card rounded-2xl p-6 space-y-5 shadow-lg border border-white/80">
-          <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+        <div id="enrollment-card" className="glass-card rounded-2xl p-6 space-y-5 shadow-xl border border-white/10">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
                 <UserPlus className="w-4 h-4" />
               </div>
-              <h3 className="text-sm font-bold text-slate-900">
+              <h3 className="text-sm font-bold text-white">
                 Enroll Genuine Voice Profile
               </h3>
             </div>
-            <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">POST /enroll</span>
+            <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">POST /enroll</span>
           </div>
 
           <form onSubmit={handleEnrollSubmit} className="space-y-4 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="font-semibold text-slate-800">
+                <label className="font-semibold text-slate-300 font-mono">
                   Speaker Identifier *
                 </label>
                 <input
@@ -162,13 +162,13 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
                   value={enrollId}
                   onChange={(e) => setEnrollId(e.target.value)}
                   disabled={isEnrolling}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
+                  className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 shadow-inner font-mono"
                   required
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-semibold text-slate-800">
+                <label className="font-semibold text-slate-300 font-mono">
                   Display / Role Name (Optional)
                 </label>
                 <input
@@ -178,14 +178,14 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
                   value={enrollName}
                   onChange={(e) => setEnrollName(e.target.value)}
                   disabled={isEnrolling}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
+                  className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 shadow-inner font-mono"
                 />
               </div>
             </div>
 
             {/* Audio Upload for Enrollment */}
             <div className="space-y-1.5">
-              <label className="font-semibold text-slate-800">
+              <label className="font-semibold text-slate-300 font-mono">
                 Reference Audio Sample (.wav, .flac) *
               </label>
               <input
@@ -201,23 +201,23 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
               {!enrollFile ? (
                 <div
                   onClick={() => !isEnrolling && enrollInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl p-5 text-center cursor-pointer transition-all bg-white/50 hover:bg-white/90 shadow-inner"
+                  className="border-2 border-dashed border-slate-700 hover:border-purple-500 rounded-2xl p-5 text-center cursor-pointer transition-all bg-black/40 hover:bg-black/60 shadow-inner"
                 >
-                  <Upload className="w-6 h-6 text-blue-600 mx-auto mb-1.5" />
-                  <div className="text-slate-800 font-bold">Select Reference Voice Audio</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">1.0s – 30.0s clean speech for 192-D biometric extraction</div>
+                  <Upload className="w-6 h-6 text-purple-400 mx-auto mb-1.5" />
+                  <div className="text-slate-200 font-bold font-mono">Select Reference Voice Audio</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5 font-mono">1.0s – 30.0s clean speech for 192-D biometric extraction</div>
                 </div>
               ) : (
-                <div className="flex items-center justify-between p-3.5 rounded-xl bg-white border border-slate-200 shadow-sm">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <FileAudio className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span className="text-slate-900 font-semibold truncate">{enrollFile.name}</span>
-                    <span className="text-slate-500 text-[11px]">({(enrollFile.size / 1024).toFixed(1)} KB)</span>
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-black/40 border border-white/10 shadow-sm">
+                  <div className="flex items-center gap-2.5 min-w-0 font-mono">
+                    <FileAudio className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="text-white font-semibold truncate">{enrollFile.name}</span>
+                    <span className="text-slate-400 text-[11px]">({(enrollFile.size / 1024).toFixed(1)} KB)</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setEnrollFile(null)}
-                    className="text-slate-500 hover:text-slate-800 font-semibold text-xs px-2 py-1"
+                    className="text-slate-400 hover:text-white font-semibold text-xs px-2 py-1 font-mono"
                   >
                     Change
                   </button>
@@ -226,23 +226,23 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
             </div>
 
             {enrollError && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-900 text-xs flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-[#ba1a1a] shrink-0 mt-0.5" />
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start gap-2 font-mono">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                 <span>{enrollError}</span>
               </div>
             )}
 
             {enrollResult && (
-              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1.5">
-                <div className="font-bold flex items-center gap-1.5 text-emerald-800">
-                  <CheckCircle2 className="w-4 h-4 text-[#009668]" />
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 space-y-1.5 font-mono">
+                <div className="font-bold flex items-center gap-1.5 text-emerald-300">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   Enrollment Successful!
                 </div>
-                <div className="text-slate-700 text-[11px] space-y-0.5 font-mono">
-                  <div>Speaker: <strong>{enrollResult.speaker_id}</strong> {enrollResult.speaker_name ? `(${enrollResult.speaker_name})` : ""}</div>
-                  <div>Embedding Dimension: <strong>{enrollResult.embedding_dimension}-D</strong> Vector</div>
-                  <div>Inference Latency: <strong>{enrollResult.inference_time_ms} ms</strong></div>
-                  <div>Sample Rate Verified: <strong>{enrollResult.sample_rate_verified} Hz</strong></div>
+                <div className="text-slate-300 text-[11px] space-y-0.5">
+                  <div>Speaker: <strong className="text-white">{enrollResult.speaker_id}</strong> {enrollResult.speaker_name ? `(${enrollResult.speaker_name})` : ""}</div>
+                  <div>Embedding Dimension: <strong className="text-white">{enrollResult.embedding_dimension}-D</strong> Vector</div>
+                  <div>Inference Latency: <strong className="text-white">{enrollResult.inference_time_ms} ms</strong></div>
+                  <div>Sample Rate Verified: <strong className="text-white">{enrollResult.sample_rate_verified} Hz</strong></div>
                 </div>
               </div>
             )}
@@ -251,7 +251,7 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
               id="submit-enroll-btn"
               type="submit"
               disabled={isEnrolling || !enrollId.trim() || !enrollFile}
-              className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg squish-btn font-mono"
             >
               {isEnrolling ? (
                 <>
@@ -269,23 +269,23 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
         </div>
 
         {/* Card 2: Standalone Biometric Verifier */}
-        <div id="verify-card" className="glass-card rounded-2xl p-6 space-y-5 shadow-lg border border-white/80">
-          <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+        <div id="verify-card" className="glass-card rounded-2xl p-6 space-y-5 shadow-xl border border-white/10">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600">
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
                 <Fingerprint className="w-4 h-4" />
               </div>
-              <h3 className="text-sm font-bold text-slate-900">
+              <h3 className="text-sm font-bold text-white">
                 Standalone Biometric Verifier
               </h3>
             </div>
-            <span className="text-[11px] font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">POST /verify-speaker</span>
+            <span className="text-[11px] font-mono font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">POST /verify-speaker</span>
           </div>
 
           <form onSubmit={handleVerifySubmit} className="space-y-4 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="font-semibold text-slate-800">
+                <label className="font-semibold text-slate-300 font-mono">
                   Select Enrolled Speaker *
                 </label>
                 <select
@@ -293,12 +293,12 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
                   value={verifySpeakerId}
                   onChange={(e) => setVerifySpeakerId(e.target.value)}
                   disabled={isVerifying}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 text-xs focus:outline-none focus:border-blue-500 shadow-sm"
+                  className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-blue-500 shadow-inner font-mono"
                   required
                 >
-                  <option value="" disabled>-- Choose Speaker --</option>
+                  <option value="" disabled className="bg-slate-900">-- Choose Speaker --</option>
                   {speakers.map((s) => (
-                    <option key={s.speaker_id} value={s.speaker_id}>
+                    <option key={s.speaker_id} value={s.speaker_id} className="bg-slate-900">
                       {s.speaker_id} {s.speaker_name ? `(${s.speaker_name})` : ""}
                     </option>
                   ))}
@@ -306,11 +306,11 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex justify-between">
-                  <label className="font-semibold text-slate-800">
+                <div className="flex justify-between font-mono">
+                  <label className="font-semibold text-slate-300">
                     Threshold (τ):
                   </label>
-                  <span className="font-mono text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">{verifyThreshold.toFixed(2)}</span>
+                  <span className="text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">{verifyThreshold.toFixed(2)}</span>
                 </div>
                 <input
                   type="range"
@@ -320,14 +320,14 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
                   value={verifyThreshold}
                   onChange={(e) => setVerifyThreshold(parseFloat(e.target.value))}
                   disabled={isVerifying}
-                  className="w-full accent-blue-600 mt-1"
+                  className="w-full accent-blue-500 mt-1"
                 />
               </div>
             </div>
 
             {/* Query Audio Upload */}
             <div className="space-y-1.5">
-              <label className="font-semibold text-slate-800">
+              <label className="font-semibold text-slate-300 font-mono">
                 Query Audio File to Compare *
               </label>
               <input
@@ -343,23 +343,23 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
               {!verifyFile ? (
                 <div
                   onClick={() => !isVerifying && verifyInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl p-5 text-center cursor-pointer transition-all bg-white/50 hover:bg-white/90 shadow-inner"
+                  className="border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-2xl p-5 text-center cursor-pointer transition-all bg-black/40 hover:bg-black/60 shadow-inner"
                 >
-                  <Upload className="w-6 h-6 text-blue-600 mx-auto mb-1.5" />
-                  <div className="text-slate-800 font-bold">Select Test Audio Stream</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">Computes cosine similarity against enrolled 192-D vector</div>
+                  <Upload className="w-6 h-6 text-blue-400 mx-auto mb-1.5" />
+                  <div className="text-slate-200 font-bold font-mono">Select Test Audio Stream</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5 font-mono">Computes cosine similarity against enrolled 192-D vector</div>
                 </div>
               ) : (
-                <div className="flex items-center justify-between p-3.5 rounded-xl bg-white border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-black/40 border border-white/10 shadow-sm font-mono">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <FileAudio className="w-4 h-4 text-blue-600 shrink-0" />
-                    <span className="text-slate-900 font-semibold truncate">{verifyFile.name}</span>
-                    <span className="text-slate-500 text-[11px]">({(verifyFile.size / 1024).toFixed(1)} KB)</span>
+                    <FileAudio className="w-4 h-4 text-blue-400 shrink-0" />
+                    <span className="text-white font-semibold truncate">{verifyFile.name}</span>
+                    <span className="text-slate-400 text-[11px]">({(verifyFile.size / 1024).toFixed(1)} KB)</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setVerifyFile(null)}
-                    className="text-slate-500 hover:text-slate-800 font-semibold text-xs px-2 py-1"
+                    className="text-slate-400 hover:text-white font-semibold text-xs px-2 py-1 font-mono"
                   >
                     Change
                   </button>
@@ -368,39 +368,39 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
             </div>
 
             {verifyError && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-900 text-xs flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-[#ba1a1a] shrink-0 mt-0.5" />
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start gap-2 font-mono">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                 <span>{verifyError}</span>
               </div>
             )}
 
             {verifyResult && (
               <div
-                className={`p-3.5 rounded-xl border text-xs space-y-2 ${
+                className={`p-3.5 rounded-xl border text-xs space-y-2 font-mono ${
                   verifyResult.match
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-900"
-                    : "bg-red-50 border-red-200 text-red-900"
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                    : "bg-red-500/10 border-red-500/30 text-red-300"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div className="font-bold flex items-center gap-1.5">
                     {verifyResult.match ? (
-                      <CheckCircle2 className="w-4 h-4 text-[#009668]" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     ) : (
-                      <XCircle className="w-4 h-4 text-[#ba1a1a]" />
+                      <XCircle className="w-4 h-4 text-red-400" />
                     )}
                     {verifyResult.match ? "BIOMETRIC MATCH (VERIFIED)" : "BIOMETRIC MISMATCH (DISCREPANCY)"}
                   </div>
-                  <span className="font-mono text-[11px]">
+                  <span className="text-[11px]">
                     Latency: {verifyResult.inference_time_ms} ms
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-700 bg-white/80 p-2.5 rounded-lg border border-slate-200">
-                  <div>Cosine Similarity: <strong className="text-slate-900">{verifyResult.similarity_score}</strong></div>
-                  <div>Decision Threshold: <strong className="text-slate-900">{verifyResult.threshold}</strong></div>
-                  <div>Mismatch Flag (M): <strong className="text-slate-900">{verifyResult.speaker_mismatch_flag}</strong></div>
-                  <div>Status: <strong className="text-slate-900">{verifyResult.status}</strong></div>
+                <div className="grid grid-cols-2 gap-2 text-[11px] bg-black/40 p-2.5 rounded-lg border border-white/5">
+                  <div>Cosine Similarity: <strong className="text-white">{verifyResult.similarity_score}</strong></div>
+                  <div>Decision Threshold: <strong className="text-white">{verifyResult.threshold}</strong></div>
+                  <div>Mismatch Flag (M): <strong className="text-white">{verifyResult.speaker_mismatch_flag}</strong></div>
+                  <div>Status: <strong className="text-white">{verifyResult.status}</strong></div>
                 </div>
               </div>
             )}
@@ -409,7 +409,7 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
               id="submit-verify-btn"
               type="submit"
               disabled={isVerifying || !verifySpeakerId || !verifyFile}
-              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg squish-btn font-mono"
             >
               {isVerifying ? (
                 <>
@@ -429,29 +429,29 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
       </div>
 
       {/* Card 3: Active Registered Profiles Table */}
-      <div id="enrolled-speakers-table" className="glass-card rounded-2xl p-6 space-y-4 shadow-lg border border-white/80">
-        <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+      <div id="enrolled-speakers-table" className="glass-card rounded-2xl p-6 space-y-4 shadow-xl border border-white/10">
+        <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div className="flex items-center gap-2">
-            <Database className="w-4 h-4 text-blue-600" />
-            <h3 className="text-sm font-bold text-slate-900">
+            <Database className="w-4 h-4 text-purple-400" />
+            <h3 className="text-sm font-bold text-white">
               Active Registered Speaker Profiles ({speakers.length})
             </h3>
           </div>
-          <span className="text-xs text-slate-500 font-mono">In-Memory 192-D Store</span>
+          <span className="text-xs text-slate-400 font-mono">In-Memory 192-D Store</span>
         </div>
 
         {speakers.length === 0 ? (
-          <div className="p-8 text-center rounded-xl bg-white/50 border border-slate-200 space-y-2">
-            <Layers className="w-8 h-8 text-slate-400 mx-auto" />
-            <div className="text-sm font-bold text-slate-800">No Speakers Enrolled Yet</div>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+          <div className="p-8 text-center rounded-xl bg-black/30 border border-white/5 space-y-2">
+            <Layers className="w-8 h-8 text-slate-500 mx-auto" />
+            <div className="text-sm font-bold text-slate-300">No Speakers Enrolled Yet</div>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto font-mono">
               Enroll genuine executives, callers, or authorized users above to enable biometric mismatch fraud defense.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
-              <thead className="text-slate-500 border-b border-slate-200 bg-slate-50/70">
+              <thead className="text-slate-400 border-b border-white/10 bg-white/5 font-mono">
                 <tr>
                   <th className="py-2.5 px-3 font-bold">Speaker ID</th>
                   <th className="py-2.5 px-3 font-bold">Display Name</th>
@@ -460,21 +460,21 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
                   <th className="py-2.5 px-3 text-right font-bold">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-mono text-slate-700">
+              <tbody className="divide-y divide-white/5 font-mono text-slate-300">
                 {speakers.map((s) => (
-                  <tr key={s.speaker_id} className="hover:bg-white/60 transition-colors">
-                    <td className="py-3 px-3 font-bold text-slate-900 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  <tr key={s.speaker_id} className="hover:bg-white/5 transition-colors">
+                    <td className="py-3 px-3 font-bold text-white flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
                       {s.speaker_id}
                     </td>
-                    <td className="py-3 px-3 font-sans text-slate-800">
+                    <td className="py-3 px-3 text-slate-200">
                       {s.speaker_name || "—"}
                     </td>
-                    <td className="py-3 px-3 text-blue-600 font-bold">
+                    <td className="py-3 px-3 text-purple-400 font-bold">
                       192-D (L2 Norm)
                     </td>
-                    <td className="py-3 px-3 text-slate-500 font-sans flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-slate-400" />
+                    <td className="py-3 px-3 text-slate-400 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-slate-500" />
                       {new Date(s.created_at * 1000).toLocaleTimeString()}
                     </td>
                     <td className="py-3 px-3 text-right">
@@ -482,7 +482,7 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
                         onClick={() => {
                           setVerifySpeakerId(s.speaker_id);
                         }}
-                        className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] text-slate-800 font-sans font-semibold transition-colors"
+                        className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] text-white font-mono font-semibold transition-colors squish-btn"
                       >
                         Test Verify
                       </button>
@@ -498,4 +498,5 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
     </div>
   );
 };
+
 

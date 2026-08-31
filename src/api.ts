@@ -6,6 +6,8 @@ import {
   EnrolledSpeaker,
   SampleAudio,
   CallContextState,
+  OrganizationPolicy,
+  PolicyAuditLog,
 } from "./types";
 
 // Base API URL. In AI Studio, port 3000 routes both Vite frontend and Express proxy backend.
@@ -82,6 +84,18 @@ export async function analyzeAudio(
   if (context.transcript_text && context.transcript_text.trim()) {
     formData.append("transcript_text", context.transcript_text.trim());
   }
+  if (context.selected_language && context.selected_language.trim()) {
+    formData.append("selected_language", context.selected_language.trim());
+    formData.append("language", context.selected_language.trim());
+  } else if (context.language && context.language.trim()) {
+    formData.append("language", context.language.trim());
+  }
+  if (context.accent_region && context.accent_region.trim()) {
+    formData.append("accent_region", context.accent_region.trim());
+  }
+  if (context.transcript_language && context.transcript_language.trim()) {
+    formData.append("transcript_language", context.transcript_language.trim());
+  }
 
   const res = await fetch(`${API_BASE}/api/analyze`, {
     method: "POST",
@@ -157,3 +171,131 @@ export async function verifySpeakerApi(
 
   return data as VerifySpeakerResponse;
 }
+
+export async function fetchVerificationSession(callId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/verification/${encodeURIComponent(callId)}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch verification session for ${callId}`);
+  }
+  const data = await res.json();
+  return data.verification_session;
+}
+
+export async function postVerificationAction(payload: {
+  call_id: string;
+  action: "START_VERIFICATION" | "COMPLETE_VERIFICATION" | "ESCALATE" | "BLOCK" | string;
+  method?: string;
+  result?: "SUCCESS" | "FAILURE" | string;
+  notes?: string;
+  actor?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/verification/action`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || `Verification action failed with HTTP ${res.status}`);
+  }
+  return data.verification_session;
+}
+
+export async function fetchSecurityEvents(
+  filter?: string,
+  search?: string
+): Promise<{ events: any[]; summary: any }> {
+  const params = new URLSearchParams();
+  if (filter && filter !== "ALL") params.append("filter", filter);
+  if (search && search.trim()) params.append("search", search.trim());
+
+  const url = `${API_BASE}/api/security-events${params.toString() ? `?${params.toString()}` : ""}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch security events with HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchSecuritySummary(): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/security-events/summary`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch security summary with HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function resolveSecurityEvent(eventId: string, notes?: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/security-events/${encodeURIComponent(eventId)}/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to resolve event with HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function escalateSecurityEvent(eventId: string, notes?: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/security-events/${encodeURIComponent(eventId)}/escalate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to escalate event with HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchOrganizationPolicy(): Promise<{ organization_id: string; policy: OrganizationPolicy }> {
+  const res = await fetch(`${API_BASE}/api/policy`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch policy with HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updateOrganizationPolicy(
+  policy: Partial<OrganizationPolicy>,
+  actor: string = "SecurityAdmin"
+): Promise<{ organization_id: string; policy: OrganizationPolicy; changes: any[]; audit_entry: any }> {
+  const res = await fetch(`${API_BASE}/api/policy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ policy, actor }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to update policy with HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function resetOrganizationPolicy(
+  actor: string = "SecurityAdmin"
+): Promise<{ organization_id: string; policy: OrganizationPolicy; changes: any[]; audit_entry: any }> {
+  const res = await fetch(`${API_BASE}/api/policy/reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actor }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to reset policy with HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchPolicyAuditLogs(): Promise<{ organization_id: string; audit_logs: PolicyAuditLog[] }> {
+  const res = await fetch(`${API_BASE}/api/policy/audit-logs`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch policy audit logs with HTTP ${res.status}`);
+  }
+  return res.json();
+}
+

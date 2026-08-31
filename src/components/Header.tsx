@@ -1,11 +1,23 @@
 import React from "react";
-import { ShieldCheck, Cpu, Radio, UserCheck, CheckCircle2, ShieldAlert } from "lucide-react";
+import {
+  ShieldCheck,
+  Cpu,
+  Radio,
+  UserCheck,
+  ShieldAlert,
+  FileAudio,
+  Sliders,
+  Activity,
+  Search,
+  Zap
+} from "lucide-react";
 import { HealthResponse } from "../types";
+import { NavTab } from "./Sidebar";
 
 interface HeaderProps {
   health: HealthResponse | null;
-  activeTab: "analysis" | "live" | "speakers";
-  onTabChange: (tab: "analysis" | "live" | "speakers") => void;
+  activeTab: NavTab;
+  onTabChange: (tab: NavTab) => void;
   enrolledCount: number;
 }
 
@@ -17,122 +29,163 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const isHealthy = health?.status === "ok";
 
+  const getTabTitle = (tab: NavTab) => {
+    switch (tab) {
+      case "live":
+        return "Live Call Intercept & Real-Time Telemetry";
+      case "analysis":
+        return "Audio Payload Forensic Inspection";
+      case "speakers":
+        return "192-D Biometric Voiceprint Registry";
+      case "events":
+        return "Security Audit Logs & Threat Incidents";
+      case "policy":
+        return "Organization Anti-Fraud Policy Controls";
+    }
+  };
+
   return (
-    <header id="main-header" className="glass-top-nav w-full sticky top-0 z-40 px-4 sm:px-8 h-16 flex items-center justify-between border-b border-white/40">
-      {/* Left: Brand Identity */}
+    <header
+      id="main-header"
+      className="glass-top-nav w-full sticky top-0 z-30 px-4 sm:px-8 h-16 flex items-center justify-between border-b border-white/10"
+    >
+      {/* Left: Brand Identity & Active Breadcrumb */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-md border border-slate-700/50">
-          <ShieldCheck className="w-5 h-5 text-emerald-400" />
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xl font-extrabold text-slate-900 tracking-tight font-sans">
-              VoiceShield
-            </span>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 border border-blue-500/20 tracking-wider">
-              SIH 2026 #26104
-            </span>
+        <div className="lg:hidden flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-md">
+            <ShieldCheck className="w-4 h-4 text-emerald-300" />
           </div>
-          <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
-            Real-Time AI Voice-Cloning Detection & Anti-Fraud Security
-          </p>
+          <span className="font-bold text-white text-sm">VoiceShield</span>
+        </div>
+
+        <div className="hidden lg:flex items-center gap-2">
+          <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider">
+            VOICESHIELD /
+          </span>
+          <span className="text-sm font-bold text-white font-sans">
+            {getTabTitle(activeTab)}
+          </span>
         </div>
       </div>
 
-      {/* Center: Navigation Links */}
-      <nav className="hidden md:flex items-center gap-1 bg-white/50 backdrop-blur-md p-1 rounded-xl border border-white/60 shadow-sm">
+      {/* Center: Navigation Pills (Visible on md/tablet) */}
+      <nav className="hidden sm:flex lg:hidden items-center gap-1 bg-slate-900/60 backdrop-blur-md p-1 rounded-xl border border-white/10">
         <button
-          id="nav-tab-analysis"
-          onClick={() => onTabChange("analysis")}
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            activeTab === "analysis"
-              ? "bg-slate-900 text-white shadow-sm"
-              : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+          onClick={() => onTabChange("live")}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-all ${
+            activeTab === "live"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-slate-400 hover:text-white"
           }`}
         >
           <Radio className="w-3.5 h-3.5" />
-          Single-File Analysis
+          Live
         </button>
         <button
-          id="nav-tab-live"
-          onClick={() => onTabChange("live")}
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            activeTab === "live"
-              ? "bg-slate-900 text-white shadow-sm"
-              : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+          onClick={() => onTabChange("analysis")}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-all ${
+            activeTab === "analysis"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-slate-400 hover:text-white"
           }`}
         >
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-          </span>
-          Live Call Monitor (Phase 7A)
+          <FileAudio className="w-3.5 h-3.5" />
+          Payload
         </button>
         <button
-          id="nav-tab-speakers"
           onClick={() => onTabChange("speakers")}
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-all ${
             activeTab === "speakers"
-              ? "bg-slate-900 text-white shadow-sm"
-              : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-slate-400 hover:text-white"
           }`}
         >
           <UserCheck className="w-3.5 h-3.5" />
-          Speaker Profiles
-          {enrolledCount > 0 && (
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-              activeTab === "speakers" ? "bg-emerald-400/30 text-emerald-300" : "bg-slate-200 text-slate-700"
-            }`}>
-              {enrolledCount}
-            </span>
-          )}
+          Profiles ({enrolledCount})
+        </button>
+        <button
+          onClick={() => onTabChange("events")}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-all ${
+            activeTab === "events"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <ShieldAlert className="w-3.5 h-3.5" />
+          Logs
         </button>
       </nav>
 
       {/* Right: Engine Telemetry & System Status */}
       <div className="flex items-center gap-3">
-        <div id="backend-status-badge" className="flex items-center gap-2 bg-white/70 backdrop-blur-md border border-white/80 rounded-xl px-3 py-1.5 text-xs text-slate-700 shadow-sm">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isHealthy ? "bg-emerald-400" : "bg-amber-400"}`}></span>
-            <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isHealthy ? "bg-emerald-500" : "bg-amber-500"}`}></span>
+        <div
+          id="backend-status-badge"
+          className="flex items-center gap-2.5 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl px-3 py-1.5 text-xs text-slate-300 shadow-inner"
+        >
+          <span className="relative flex h-2 w-2">
+            <span
+              className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                isHealthy ? "bg-emerald-400" : "bg-amber-400"
+              }`}
+            ></span>
+            <span
+              className={`relative inline-flex rounded-full h-2 w-2 ${
+                isHealthy ? "bg-emerald-500" : "bg-amber-500"
+              }`}
+            ></span>
           </span>
-          <span className="font-semibold text-slate-800 hidden sm:inline">
-            {isHealthy ? "System Secure" : "Connecting"}
+          <span className="font-semibold font-mono text-slate-200 hidden sm:inline">
+            {isHealthy ? "TELEMETRY ACTIVE" : "DAEMON CONNECTING"}
           </span>
-          <span className="text-slate-300 hidden sm:inline">|</span>
-          <div className="flex items-center gap-1 text-[11px] font-mono text-slate-500">
-            <Cpu className="w-3 h-3 text-slate-400" />
+          <span className="text-slate-600 hidden sm:inline">|</span>
+          <div className="flex items-center gap-1 text-[11px] font-mono text-slate-400">
+            <Cpu className="w-3 h-3 text-blue-400" />
             <span>ECAPA + Wav2Vec2</span>
           </div>
         </div>
 
         {/* Mobile Tab Toggle */}
-        <div className="flex md:hidden bg-white/60 rounded-lg p-1 border border-white/70">
+        <div className="flex sm:hidden bg-slate-900/80 rounded-lg p-1 border border-white/10">
           <button
-            onClick={() => onTabChange("analysis")}
-            className={`p-1.5 rounded ${activeTab === "analysis" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-            title="Single Analysis"
+            onClick={() => onTabChange("live")}
+            className={`p-1.5 rounded ${activeTab === "live" ? "bg-blue-600 text-white" : "text-slate-400"}`}
+            title="Live Call Monitor"
           >
             <Radio className="w-4 h-4" />
           </button>
           <button
-            onClick={() => onTabChange("live")}
-            className={`p-1.5 rounded ${activeTab === "live" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-            title="Live Call Monitor"
+            onClick={() => onTabChange("analysis")}
+            className={`p-1.5 rounded ${activeTab === "analysis" ? "bg-blue-600 text-white" : "text-slate-400"}`}
+            title="Payload Inspection"
           >
-            <span className="w-2 h-2 rounded-full bg-blue-500 block m-1" />
+            <FileAudio className="w-4 h-4" />
           </button>
           <button
             onClick={() => onTabChange("speakers")}
-            className={`p-1.5 rounded ${activeTab === "speakers" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+            className={`p-1.5 rounded ${activeTab === "speakers" ? "bg-blue-600 text-white" : "text-slate-400"}`}
             title="Speaker Profiles"
           >
             <UserCheck className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onTabChange("events")}
+            className={`p-1.5 rounded ${activeTab === "events" ? "bg-blue-600 text-white" : "text-slate-400"}`}
+            title="Security Logs"
+          >
+            <ShieldAlert className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onTabChange("policy")}
+            className={`p-1.5 rounded ${activeTab === "policy" ? "bg-blue-600 text-white" : "text-slate-400"}`}
+            title="Policy Controls"
+          >
+            <Sliders className="w-4 h-4" />
           </button>
         </div>
       </div>
     </header>
   );
 };
+
 
 

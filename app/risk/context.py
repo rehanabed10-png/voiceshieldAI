@@ -8,8 +8,9 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Set
 
 
-# Default suspicious keywords indicative of social engineering and financial wire fraud
+# Default suspicious keywords indicative of social engineering and financial wire fraud (English & Indian Multilingual)
 DEFAULT_SUSPICIOUS_KEYWORDS: Set[str] = {
+    # English keywords
     "wire immediately",
     "wire transfer",
     "send funds",
@@ -29,7 +30,212 @@ DEFAULT_SUSPICIOUS_KEYWORDS: Set[str] = {
     "account details",
     "bank transfer",
     "unauthorized transaction",
+    # Hindi keywords
+    "turant bhejo",
+    "paise transfer",
+    "otp batao",
+    "kisi ko mat batana",
+    "gupt rakho",
+    "khata sankhya",
+    "emergency payment",
+    # Telugu keywords
+    "ventane pampandi",
+    "dabbu pampandi",
+    "evariki cheppavaddu",
+    "rahasyam",
+    "otp cheppandi",
+    "khata vivaralu",
+    # Tamil keywords
+    "udane anuppavum",
+    "panam anuppavum",
+    "yarukkum sollathe",
+    "ragasiyam",
+    "otp sollunga",
+    # Kannada keywords
+    "tara bandisi",
+    "hana kalisi",
+    "yarigu helabedi",
+    "khatheya vivara",
+    # Malayalam keywords
+    "udane ayakkuka",
+    "paisa ayakkuka",
+    "aarkkum parayenda",
+    # Bengali keywords
+    "tahobil pathan",
+    "taka pathan",
+    "kakeo bolben na",
+    "gopon rakhoon",
+    # Marathi keywords
+    "tatkal pathva",
+    "paise pathva",
+    "koni sangu naka",
+    "gupt theva",
 }
+
+# Supported Indian & English Language Registry (Feature 4 Multilingual Readiness)
+SUPPORTED_LANGUAGE_OPTIONS = [
+    "Auto Detect",
+    "English",
+    "Hindi",
+    "Telugu",
+    "Tamil",
+    "Kannada",
+    "Malayalam",
+    "Bengali",
+    "Marathi",
+]
+
+LANGUAGE_METADATA_REGISTRY = {
+    "auto": {
+        "canonical_name": "Auto Detect",
+        "code": "auto",
+        "accent_region": "Adaptive Subcontinental Multi-Dialect Profile",
+        "default_detected": "English",
+        "confidence": 0.94,
+    },
+    "english": {
+        "canonical_name": "English",
+        "code": "en",
+        "accent_region": "Indian English (Standard / Subcontinental)",
+        "default_detected": "English",
+        "confidence": 0.98,
+    },
+    "hindi": {
+        "canonical_name": "Hindi",
+        "code": "hi",
+        "accent_region": "Indo-Aryan (Northern & Central Region)",
+        "default_detected": "Hindi",
+        "confidence": 0.96,
+    },
+    "telugu": {
+        "canonical_name": "Telugu",
+        "code": "te",
+        "accent_region": "Dravidian (Andhra Pradesh & Telangana)",
+        "default_detected": "Telugu",
+        "confidence": 0.97,
+    },
+    "tamil": {
+        "canonical_name": "Tamil",
+        "code": "ta",
+        "accent_region": "Dravidian (Tamil Nadu & Southern Region)",
+        "default_detected": "Tamil",
+        "confidence": 0.97,
+    },
+    "kannada": {
+        "canonical_name": "Kannada",
+        "code": "kn",
+        "accent_region": "Dravidian (Karnataka Region)",
+        "default_detected": "Kannada",
+        "confidence": 0.95,
+    },
+    "malayalam": {
+        "canonical_name": "Malayalam",
+        "code": "ml",
+        "accent_region": "Dravidian (Kerala Region)",
+        "default_detected": "Malayalam",
+        "confidence": 0.95,
+    },
+    "bengali": {
+        "canonical_name": "Bengali",
+        "code": "bn",
+        "accent_region": "Indo-Aryan (Eastern Region & West Bengal)",
+        "default_detected": "Bengali",
+        "confidence": 0.96,
+    },
+    "marathi": {
+        "canonical_name": "Marathi",
+        "code": "mr",
+        "accent_region": "Indo-Aryan (Western Region & Maharashtra)",
+        "default_detected": "Marathi",
+        "confidence": 0.96,
+    },
+}
+
+def resolve_speech_profile(
+    selected_language: Optional[str] = None,
+    detected_language: Optional[str] = None,
+    accent_region_override: Optional[str] = None,
+    transcript_text: Optional[str] = None,
+) -> dict:
+    """
+    Deterministically builds non-authoritative multilingual speech profile metadata.
+    Does NOT modify or override cryptographic risk scoring, caller recognition,
+    verification, fraud history, organization, or policy enforcement.
+    """
+    raw_sel = str(selected_language or "").strip().lower()
+    
+    # Map common aliases and ISO codes
+    alias_map = {
+        "": "auto",
+        "auto": "auto",
+        "auto detect": "auto",
+        "auto_detect": "auto",
+        "autodetect": "auto",
+        "en": "english",
+        "eng": "english",
+        "english": "english",
+        "hi": "hindi",
+        "hin": "hindi",
+        "hindi": "hindi",
+        "te": "telugu",
+        "tel": "telugu",
+        "telugu": "telugu",
+        "ta": "tamil",
+        "tam": "tamil",
+        "tamil": "tamil",
+        "kn": "kannada",
+        "kan": "kannada",
+        "kannada": "kannada",
+        "ml": "malayalam",
+        "mal": "malayalam",
+        "malayalam": "malayalam",
+        "bn": "bengali",
+        "ben": "bengali",
+        "bangla": "bengali",
+        "bengali": "bengali",
+        "mr": "marathi",
+        "mar": "marathi",
+        "marathi": "marathi",
+    }
+    
+    resolved_key = alias_map.get(raw_sel, "auto")
+    meta = LANGUAGE_METADATA_REGISTRY.get(resolved_key, LANGUAGE_METADATA_REGISTRY["auto"])
+    
+    is_auto = resolved_key == "auto"
+    selected_name = meta["canonical_name"]
+    
+    if is_auto:
+        # For auto-detection, determine plausible regional dialect without false claims
+        det_name = detected_language or meta["default_detected"]
+        active_lang = det_name
+        # Match detected language to metadata registry for accent profiling
+        det_key = alias_map.get(str(det_name).strip().lower(), "english")
+        det_meta = LANGUAGE_METADATA_REGISTRY.get(det_key, LANGUAGE_METADATA_REGISTRY["english"])
+        accent_profile = accent_region_override or det_meta["accent_region"]
+        confidence = round(float(meta["confidence"]), 2)
+        code = det_meta["code"]
+    else:
+        active_lang = selected_name
+        det_name = selected_name
+        accent_profile = accent_region_override or meta["accent_region"]
+        confidence = round(float(meta["confidence"]), 2)
+        code = meta["code"]
+
+    transcript_lang = f"{active_lang} (Subcontinental Romanized / Vernacular)" if transcript_text else active_lang
+
+    return {
+        "language": active_lang,
+        "language_code": code,
+        "selected_language": selected_name,
+        "detected_language": det_name,
+        "is_auto_detected": is_auto,
+        "language_confidence": confidence,
+        "accent_region": accent_profile,
+        "accent_profile": accent_profile,
+        "transcript_language": transcript_lang,
+        "is_authoritative": False,
+        "disclaimer": "Non-authoritative speech profile metadata for multilingual readiness. Does not alter cryptographic risk evaluation.",
+    }
 
 # High-authority roles frequently targeted in executive impersonation (CEO fraud / BEC)
 HIGH_AUTHORITY_ROLES: Set[str] = {
@@ -66,7 +272,7 @@ class CallContext:
     transcript_text: Optional[str] = None
     suspicious_keywords_found: List[str] = field(default_factory=list)
     
-    # Enriched Multi-Tenant Database Context (Phase 1 Backend Integration)
+    # Enriched Multi-Tenant Database Context & Authoritative Policy (Feature 3)
     organization_id: Optional[str] = None
     contact_id: Optional[str] = None
     contact_name: Optional[str] = None
@@ -81,6 +287,23 @@ class CallContext:
     recent_fraud_types: List[str] = field(default_factory=list)
     context_source: str = "DEFAULT"
     context_available: bool = True
+
+    # Multilingual & Speech Profile Metadata (Feature 4 - Non-Authoritative)
+    selected_language: Optional[str] = "Auto Detect"
+    language: Optional[str] = None
+    detected_language: Optional[str] = None
+    language_confidence: Optional[float] = None
+    accent_region: Optional[str] = None
+    accent_profile: Optional[str] = None
+    transcript_language: Optional[str] = None
+
+    # Authoritative Organization Policy Fields
+    fake_prob_critical_threshold: float = 0.85
+    fake_prob_warn_threshold: float = 0.50
+    speaker_verification_strictness: float = 0.65
+    acoustic_anomaly_sensitivity: float = 0.70
+    step_up_verification_required: bool = True
+    auto_block_on_critical_deepfake: bool = False
 
 
 @dataclass
@@ -216,6 +439,13 @@ class RuleBasedContextAnalyzer:
                 context_flag = 1.0
             is_suspicious = context_flag > 0.0
 
+        speech_prof = resolve_speech_profile(
+            selected_language=context.selected_language or context.language,
+            detected_language=context.detected_language,
+            accent_region_override=context.accent_region or context.accent_profile,
+            transcript_text=context.transcript_text,
+        )
+
         metadata = {
             "context_source": context.context_source,
             "context_available": context.context_available,
@@ -223,6 +453,13 @@ class RuleBasedContextAnalyzer:
             "contact_id": context.contact_id,
             "is_verified": context.is_verified,
             "detected_keywords": detected_keywords,
+            "speech_profile": speech_prof,
+            "language": speech_prof["language"],
+            "selected_language": speech_prof["selected_language"],
+            "detected_language": speech_prof["detected_language"],
+            "language_confidence": speech_prof["language_confidence"],
+            "accent_region": speech_prof["accent_region"],
+            "accent_profile": speech_prof["accent_profile"],
         }
 
         return ContextEvaluation(
