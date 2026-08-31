@@ -27,6 +27,14 @@ export interface SpeakerVerificationDetail {
   inference_time_ms?: number | null;
 }
 
+export interface ProsodyAnalysis {
+  acoustic_anomaly: number;
+  features: Record<string, number>;
+  anomaly_reasons: string[];
+  status: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface RiskSignals {
   fake_probability: number;
   speaker_mismatch: number;
@@ -34,6 +42,8 @@ export interface RiskSignals {
   context_flag: number;
   speaker_verification_status: string;
   acoustic_model_status: string;
+  prosody_reasons?: string[];
+  prosody_features?: Record<string, number>;
 }
 
 export interface AudioMetadata {
@@ -50,11 +60,13 @@ export interface AnalyzeResponse {
   risk_level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | string;
   deepfake_detection: DeepfakeResult;
   speaker_verification: SpeakerVerificationDetail;
+  prosody_analysis?: ProsodyAnalysis;
   risk_signals: RiskSignals;
   flags: string[];
   recommended_action: "ALLOW" | "WARN" | "SECONDARY_VERIFICATION" | "BLOCK" | string;
   audio_metadata: AudioMetadata;
 }
+
 
 export interface EnrollmentResponse {
   status: "ENROLLED" | string;

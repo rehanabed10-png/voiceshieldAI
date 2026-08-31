@@ -19,6 +19,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
 from app.audio.preprocessing import AudioPreprocessor
+from app.audio.prosody import ProsodyAnalysisResult, ProsodyAnalyzer
 from app.models.detector import VoiceCloneDetector
 from app.models.speaker_verifier import (
     BaseSpeakerVerifier,
@@ -41,6 +42,7 @@ router = APIRouter()
 
 # Global engine singletons (lazily initialized or injected)
 _preprocessor: Optional[AudioPreprocessor] = None
+_prosody_analyzer: Optional[ProsodyAnalyzer] = None
 _detector: Optional[VoiceCloneDetector] = None
 _risk_engine: Optional[VoiceShieldRiskEngine] = None
 _speaker_verifier: Optional[BaseSpeakerVerifier] = None
@@ -52,6 +54,13 @@ def get_preprocessor() -> AudioPreprocessor:
     if _preprocessor is None:
         _preprocessor = AudioPreprocessor()
     return _preprocessor
+
+
+def get_prosody_analyzer() -> ProsodyAnalyzer:
+    global _prosody_analyzer
+    if _prosody_analyzer is None:
+        _prosody_analyzer = ProsodyAnalyzer()
+    return _prosody_analyzer
 
 
 def get_detector() -> VoiceCloneDetector:
@@ -131,6 +140,8 @@ class RiskSignalsSchema(BaseModel):
     context_flag: float
     speaker_verification_status: str
     acoustic_model_status: str
+    prosody_reasons: Optional[List[str]] = None
+    prosody_features: Optional[Dict[str, float]] = None
 
 
 class AnalyzeResponse(BaseModel):
@@ -139,6 +150,7 @@ class AnalyzeResponse(BaseModel):
     risk_level: str
     deepfake_detection: DeepfakeResultSchema
     speaker_verification: SpeakerVerificationDetailSchema
+    prosody_analysis: Optional[Dict[str, Any]] = None
     risk_signals: RiskSignalsSchema
     flags: List[str]
     recommended_action: str
@@ -199,7 +211,7 @@ async def analyze_audio(
     urgency_reason: Optional[str] = Form(None, description="Reason stated for urgency pressure"),
     transcript_text: Optional[str] = Form(None, description="Call transcript snippet for keyword scanning"),
     acoustic_anomaly_override: Optional[float] = Form(
-        0.0, description="Prosodic anomaly score input [0.0, 1.0] until specialized acoustic model integration"
+        None, description="Optional manual override for prosodic anomaly score [0.0, 1.0]"
     ),
 ):
     """
@@ -207,9 +219,10 @@ async def analyze_audio(
     
     1. Validates and preprocesses uploaded audio into 16kHz mono.
     2. Runs deepfake voice clone detection using fine-tuned Wav2Vec2.
-    3. Performs biometric speaker verification if speaker_id is enrolled.
-    4. Evaluates contextual indicators (caller recognition, claimed role, transaction spikes, urgency keywords).
-    5. Computes composite risk score and outputs actionable security recommendations.
+    3. Performs deterministic prosodic and acoustic anomaly feature extraction.
+    4. Performs biometric speaker verification if speaker_id is enrolled.
+    5. Evaluates contextual indicators (caller recognition, claimed role, transaction spikes, urgency keywords).
+    6. Computes composite risk score and outputs actionable security recommendations.
     """
     if not file or not file.filename:
         raise HTTPException(
@@ -232,7 +245,16 @@ async def analyze_audio(
         detector = get_detector()
         prediction_result = detector.predict(preprocessed)
 
-        # 3. Biometric Speaker Verification (Phase 5)
+        # 3. Prosody & Acoustic Anomaly Analysis
+        prosody_analyzer = get_prosody_analyzer()
+        prosody_result = prosody_analyzer.analyze(preprocessed)
+
+        if acoustic_anomaly_override is not None and float(acoustic_anomaly_override) > 0.0:
+            resolved_acoustic_anomaly = float(acoustic_anomaly_override)
+        else:
+            resolved_acoustic_anomaly = prosody_result.acoustic_anomaly
+
+        # 4. Biometric Speaker Verification (Phase 5)
         speaker_store = get_speaker_store()
         speaker_verifier = get_speaker_verifier()
         
@@ -269,7 +291,7 @@ async def analyze_audio(
                     speaker_id=speaker_id,
                 )
 
-        # 4. Formulate call context for Phase 3 risk engine
+        # 5. Formulate call context for Phase 3 risk engine
         call_context = CallContext(
             caller_id=caller_id,
             is_caller_recognized=is_caller_recognized,
@@ -282,13 +304,14 @@ async def analyze_audio(
             transcript_text=transcript_text,
         )
 
-        # 5. Calculate composite risk score using Phase 3 engine
+        # 6. Calculate composite risk score using Phase 3 engine
         risk_engine = get_risk_engine()
         risk_assessment = risk_engine.evaluate(
             fake_probability=prediction_result.fake_probability,
             speaker_mismatch=speaker_mismatch_signal,
-            acoustic_anomaly=acoustic_anomaly_override or 0.0,
+            acoustic_anomaly=resolved_acoustic_anomaly,
             context=call_context,
+            prosody_reasons=prosody_result.anomaly_reasons,
         )
 
         call_id = f"CALL-{uuid.uuid4().hex[:10].upper()}"
@@ -307,13 +330,16 @@ async def analyze_audio(
                 disclaimer=prediction_result.metadata.get("disclaimer"),
             ),
             speaker_verification=speaker_detail,
+            prosody_analysis=prosody_result.to_dict(),
             risk_signals=RiskSignalsSchema(
                 fake_probability=prediction_result.fake_probability,
                 speaker_mismatch=speaker_mismatch_signal,
-                acoustic_anomaly=float(acoustic_anomaly_override or 0.0),
+                acoustic_anomaly=round(float(resolved_acoustic_anomaly), 4),
                 context_flag=risk_assessment.signals.get("context_flag", 0.0),
                 speaker_verification_status=speaker_verification_status,
-                acoustic_model_status="INPUT_SUPPLIED (Specialized Prosody Model Deferred)",
+                acoustic_model_status="DETERMINISTIC_PROSODY_ANALYSIS",
+                prosody_reasons=prosody_result.anomaly_reasons,
+                prosody_features={k: round(float(v), 4) for k, v in prosody_result.features.items()},
             ),
             flags=risk_assessment.flags,
             recommended_action=risk_assessment.recommended_action,
@@ -325,6 +351,7 @@ async def analyze_audio(
                 rms_db=preprocessed.rms_energy_db,
             ),
         )
+
 
     except AudioTooShortError as err:
         raise HTTPException(

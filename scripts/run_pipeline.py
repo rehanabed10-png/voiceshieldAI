@@ -21,7 +21,11 @@ from app.audio.preprocessing import (
     AudioPreprocessor,
     PreprocessedAudio,
 )
-from app.audio.prosody import ProsodyAnalyzer
+from app.audio.prosody import (
+    ProsodyAnalysisResult,
+    ProsodyAnalyzer,
+    ProsodyResult,
+)
 from app.utils.audio_utils import (
     AudioCorruptError,
     AudioError,
@@ -108,12 +112,12 @@ class PipelineWorker:
 
     def __init__(self):
         self.preprocessor = AudioPreprocessor()
+        self.prosody_analyzer = ProsodyAnalyzer()
         self.detector = VoiceCloneDetector()
         self.detector.load()
         self.speaker_verifier = PretrainedECAPASpeakerVerifier()
         self.speaker_verifier.load_model()
         self.speaker_store = load_persistent_store()
-        self.prosody_analyzer = ProsodyAnalyzer(sample_rate=16000)
         self.risk_engine = VoiceShieldRiskEngine()
         self.model_load_count = 1
 
@@ -161,20 +165,20 @@ class PipelineWorker:
         is_urgent = args.get("is_urgent", False)
         urgency_reason = args.get("urgency_reason")
         transcript_text = args.get("transcript_text")
-        passed_acoustic_anomaly = args.get("acoustic_anomaly")
+        raw_acoustic_override = args.get("acoustic_anomaly")
 
         if not audio_path or not os.path.exists(audio_path):
             raise FileNotFoundAudioError(f"Audio file not found: {audio_path}")
 
         preprocessed = self.preprocessor.process(audio_path)
         prediction_result = self.detector.predict(preprocessed)
+        prosody_result = self.prosody_analyzer.analyze(preprocessed)
 
-        # Deterministic prosody and acoustic anomaly analysis
-        prosody_res = self.prosody_analyzer.analyze(preprocessed)
-        if passed_acoustic_anomaly is not None and float(passed_acoustic_anomaly) > 0.0:
-            acoustic_anomaly = float(passed_acoustic_anomaly)
+        # Use explicit override if passed and > 0.0, otherwise use calculated dynamic acoustic anomaly
+        if raw_acoustic_override is not None and float(raw_acoustic_override) > 0.0:
+            acoustic_anomaly = float(raw_acoustic_override)
         else:
-            acoustic_anomaly = prosody_res.acoustic_anomaly
+            acoustic_anomaly = prosody_result.acoustic_anomaly
 
         self.sync_store()
         speaker_mismatch_signal = 0
@@ -237,6 +241,7 @@ class PipelineWorker:
             speaker_mismatch=speaker_mismatch_signal,
             acoustic_anomaly=acoustic_anomaly,
             context=call_context,
+            prosody_reasons=prosody_result.anomaly_reasons,
         )
 
         call_id = f"CALL-{uuid.uuid4().hex[:8].upper()}"
@@ -255,17 +260,19 @@ class PipelineWorker:
                 "disclaimer": prediction_result.metadata.get("disclaimer"),
             },
             "speaker_verification": speaker_detail,
+            "prosody_analysis": prosody_result.to_dict(),
             "risk_signals": {
                 "fake_probability": round(prediction_result.fake_probability, 4),
                 "speaker_mismatch": speaker_mismatch_signal,
                 "acoustic_anomaly": round(float(acoustic_anomaly), 4),
                 "context_flag": risk_assessment.signals.get("context_flag", 0.0),
                 "speaker_verification_status": speaker_verification_status,
-                "acoustic_model_status": "DETERMINISTIC_PROSODY_EVALUATED",
+                "acoustic_model_status": "DETERMINISTIC_PROSODY_ANALYSIS",
+                "prosody_reasons": prosody_result.anomaly_reasons,
             },
             "flags": risk_assessment.flags,
-            "prosody_reasons": prosody_res.prosody_reasons,
-            "prosody_metrics": prosody_res.metrics,
+            "prosody_reasons": prosody_result.anomaly_reasons,
+            "prosody_metrics": {k: round(float(v), 4) for k, v in prosody_result.features.items()},
             "recommended_action": risk_assessment.recommended_action,
             "audio_metadata": {
                 "sample_rate": preprocessed.sample_rate,
@@ -322,7 +329,7 @@ class PipelineWorker:
         # 1. Wav2Vec2 Deepfake Inference
         prediction_result = self.detector.predict(preprocessed)
 
-        # 2. Deterministic Prosody & Acoustic Anomaly Analysis
+        # 2. Deterministic Prosody & Acoustic Anomaly Analysis (single authoritative run)
         prosody_res = self.prosody_analyzer.analyze(preprocessed)
 
         # 3. Speaker Biometric Verification (if enrolled)
@@ -391,6 +398,7 @@ class PipelineWorker:
             speaker_mismatch=speaker_mismatch_signal,
             acoustic_anomaly=prosody_res.acoustic_anomaly,
             context=call_context,
+            prosody_reasons=prosody_res.anomaly_reasons,
         )
 
         total_latency_ms = (time.perf_counter() - start_time) * 1000.0
@@ -406,8 +414,9 @@ class PipelineWorker:
             "risk_level": risk_assessment.risk_level,
             "recommended_action": risk_assessment.recommended_action,
             "flags": risk_assessment.flags,
-            "prosody_reasons": prosody_res.prosody_reasons,
-            "prosody_metrics": prosody_res.metrics,
+            "prosody_reasons": prosody_res.anomaly_reasons,
+            "prosody_metrics": {k: round(float(v), 4) for k, v in prosody_res.features.items()},
+            "prosody_analysis": prosody_res.to_dict(),
             "deepfake_detection": {
                 "prediction": prediction_result.prediction,
                 "fake_probability": round(prediction_result.fake_probability, 4),
@@ -598,6 +607,14 @@ def cmd_analyze(args):
         preprocessor = AudioPreprocessor()
         preprocessed = preprocessor.process(audio_path)
 
+        prosody_analyzer = ProsodyAnalyzer()
+        prosody_result = prosody_analyzer.analyze(preprocessed)
+
+        if args.acoustic_anomaly is not None and float(args.acoustic_anomaly) > 0.0:
+            acoustic_anomaly = float(args.acoustic_anomaly)
+        else:
+            acoustic_anomaly = prosody_result.acoustic_anomaly
+
         detector = VoiceCloneDetector()
         detector.load()
         prediction_result = detector.predict(preprocessed)
@@ -667,6 +684,7 @@ def cmd_analyze(args):
             speaker_mismatch=speaker_mismatch_signal,
             acoustic_anomaly=acoustic_anomaly,
             context=call_context,
+            prosody_reasons=prosody_result.anomaly_reasons,
         )
 
         call_id = f"CALL-{uuid.uuid4().hex[:8].upper()}"
@@ -685,13 +703,15 @@ def cmd_analyze(args):
                 "disclaimer": prediction_result.metadata.get("disclaimer"),
             },
             "speaker_verification": speaker_detail,
+            "prosody_analysis": prosody_result.to_dict(),
             "risk_signals": {
                 "fake_probability": round(prediction_result.fake_probability, 4),
                 "speaker_mismatch": speaker_mismatch_signal,
-                "acoustic_anomaly": float(acoustic_anomaly),
+                "acoustic_anomaly": round(float(acoustic_anomaly), 4),
                 "context_flag": risk_assessment.signals.get("context_flag", 0.0),
                 "speaker_verification_status": speaker_verification_status,
-                "acoustic_model_status": "INPUT_SUPPLIED (Specialized Prosody Model Deferred)",
+                "acoustic_model_status": "DETERMINISTIC_PROSODY_ANALYSIS",
+                "prosody_reasons": prosody_result.anomaly_reasons,
             },
             "flags": risk_assessment.flags,
             "recommended_action": risk_assessment.recommended_action,
@@ -703,6 +723,7 @@ def cmd_analyze(args):
                 "rms_db": round(preprocessed.rms_energy_db, 2),
             },
         }
+
         print(json.dumps(res))
     except AudioTooShortError as err:
         sys.stderr.write(json.dumps({"error_type": "AudioTooShortError", "message": str(err), "status": 422}))

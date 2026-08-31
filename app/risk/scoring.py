@@ -163,6 +163,7 @@ class VoiceShieldRiskEngine:
         self,
         signals: RiskSignals,
         context_reasons: Optional[List[str]] = None,
+        prosody_reasons: Optional[List[str]] = None,
     ) -> RiskAssessment:
         """
         Evaluates pre-assembled risk signals and returns a comprehensive RiskAssessment.
@@ -183,7 +184,10 @@ class VoiceShieldRiskEngine:
             flags.append("Speaker mismatch (voice biometrics do not match claimed profile)")
 
         if signals.acoustic_anomaly >= self.config.acoustic_anomaly_flag_threshold:
-            flags.append(f"Prosodic/acoustic anomaly detected ({signals.acoustic_anomaly:.2f})")
+            if prosody_reasons:
+                flags.extend(prosody_reasons)
+            else:
+                flags.append(f"Prosodic/acoustic anomaly detected ({signals.acoustic_anomaly:.2f})")
 
         if signals.context_flag >= 0.5:
             if context_reasons:
@@ -224,6 +228,7 @@ class VoiceShieldRiskEngine:
         acoustic_anomaly: float = 0.0,
         context: Optional[CallContext] = None,
         context_flag: Optional[float] = None,
+        prosody_reasons: Optional[List[str]] = None,
     ) -> RiskAssessment:
         """
         Convenience endpoint to evaluate call risks directly with optional CallContext.
@@ -246,4 +251,9 @@ class VoiceShieldRiskEngine:
             context_flag=resolved_context_flag,
         )
 
-        return self.evaluate_signals(signals, context_reasons=context_reasons)
+        return self.evaluate_signals(
+            signals,
+            context_reasons=context_reasons,
+            prosody_reasons=prosody_reasons,
+        )
+
