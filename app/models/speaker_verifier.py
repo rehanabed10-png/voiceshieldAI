@@ -193,7 +193,7 @@ class PretrainedECAPASpeakerVerifier(BaseSpeakerVerifier):
         # Neural inference path if SpeechBrain model is loaded
         if self.model is not None:
             import torch
-            with torch.no_grad():
+            with getattr(torch, "inference_mode", torch.no_grad)():
                 tensor_audio = torch.tensor(raw_waveform, dtype=torch.float32).unsqueeze(0).to(self.device)
                 embeddings = self.model.encode_batch(tensor_audio)
                 # Squeeze to 1D vector and normalize

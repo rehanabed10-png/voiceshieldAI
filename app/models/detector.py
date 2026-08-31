@@ -208,7 +208,7 @@ class HuggingFaceTransformerDetector(BaseVoiceDetector):
         if self.config.use_fp16 and self.device == "cuda":
             inputs = {k: v.half() if v.dtype == torch.float32 else v for k, v in inputs.items()}
 
-        with torch.no_grad():
+        with getattr(torch, "inference_mode", torch.no_grad)():
             outputs = self.model(**inputs)
             logits = outputs.logits
             probs = torch.softmax(logits, dim=-1).squeeze().cpu().tolist()

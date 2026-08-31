@@ -7,6 +7,7 @@ Preserves all Phase 1–5 algorithms, mathematical feature extractors, and risk 
 import argparse
 import base64
 import json
+import math
 import os
 import struct
 import sys
@@ -120,6 +121,44 @@ class PipelineWorker:
         self.speaker_store = load_persistent_store()
         self.risk_engine = VoiceShieldRiskEngine()
         self.model_load_count = 1
+        self._warmup()
+
+    def _warmup(self) -> None:
+        """
+        Performs a safe, one-time in-memory warmup inference pass across initialized models
+        to eliminate lazy initialization latency before live streaming begins.
+        """
+        t0 = time.perf_counter()
+        try:
+            # 1.0s valid in-memory sine tone (16kHz mono, 16000 samples)
+            warmup_waveform = [0.1 * math.sin(2.0 * math.pi * 220.0 * i / 16000.0) for i in range(16000)]
+            warmup_audio = PreprocessedAudio(
+                waveform=warmup_waveform,
+                sample_rate=16000,
+                original_duration_sec=1.0,
+                processed_duration_sec=1.0,
+                rms_energy_db=-20.0,
+                estimated_snr_db=30.0,
+                channels=1,
+                metadata={"warmup": True},
+            )
+            # Warmup Wav2Vec2 detector
+            if hasattr(self, "detector") and self.detector is not None:
+                self.detector.predict(warmup_audio)
+
+            # Warmup ProsodyAnalyzer
+            if hasattr(self, "prosody_analyzer") and self.prosody_analyzer is not None:
+                self.prosody_analyzer.analyze(warmup_audio)
+
+            # Warmup SpeakerVerifier embedding path
+            if hasattr(self, "speaker_verifier") and self.speaker_verifier is not None:
+                self.speaker_verifier.extract_embedding(warmup_audio, speaker_id="__warmup__")
+
+            warmup_ms = (time.perf_counter() - t0) * 1000.0
+            sys.stderr.write(f"[PipelineWorker] One-time model warmup completed in {warmup_ms:.1f}ms.\n")
+        except Exception as err:
+            # Fail gracefully without blocking daemon startup
+            sys.stderr.write(f"[PipelineWorker:WarmupWarning] Warmup skipped: {err}\n")
 
     def sync_store(self):
         """Synchronize in-memory speaker store with persistent storage."""
@@ -313,7 +352,76 @@ class PipelineWorker:
 
         rms = calculate_rms(samples)
         rms_db = linear_to_db(rms)
+        peak_amp = max(abs(s) for s in samples) if samples else 0.0
         snr_db = calculate_snr_estimate(samples)
+
+        # Silence / Background Voice Activity Gate
+        # Consistent with AudioConfig.silence_threshold_db (-45.0 dB)
+        silence_threshold_db = getattr(self.preprocessor.config, "silence_threshold_db", -45.0)
+        is_silence = (rms_db < silence_threshold_db) and (peak_amp < 0.005)
+
+        if is_silence:
+            total_latency_ms = (time.perf_counter() - start_time) * 1000.0
+            call_id = args.get("call_id") or f"LIVE-{uuid.uuid4().hex[:6].upper()}"
+            return {
+                "status": "SILENCE_OR_BACKGROUND",
+                "call_id": call_id,
+                "window_index": args.get("window_index", 0),
+                "fake_probability": 0.0,
+                "real_probability": 0.0,
+                "acoustic_anomaly": 0.0,
+                "risk_score": 0,
+                "risk_level": "LOW",
+                "recommended_action": "ALLOW",
+                "flags": ["VAD_SILENCE_WINDOW"],
+                "prosody_reasons": ["Background silence / no active speech detected"],
+                "prosody_metrics": {
+                    "f0_mean_hz": 0.0,
+                    "f0_std_hz": 0.0,
+                    "f0_cv": 0.0,
+                    "energy_mean": 0.0,
+                    "energy_std": 0.0,
+                    "energy_dynamics": 0.0,
+                    "zcr_mean": 0.0,
+                    "spectral_centroid_hz": 0.0,
+                    "spectral_spread_hz": 0.0,
+                    "hf_energy_ratio": 0.0,
+                    "speech_ratio": 0.0,
+                    "syllable_rate_proxy": 0.0,
+                },
+                "prosody_analysis": {
+                    "acoustic_anomaly": 0.0,
+                    "anomaly_reasons": ["Background silence / no active speech detected"],
+                    "features": {},
+                    "is_anomalous": False,
+                },
+                "deepfake_detection": {
+                    "prediction": "SILENCE",
+                    "fake_probability": 0.0,
+                    "real_probability": 0.0,
+                    "model_type": "VoiceActivityGated",
+                    "status": "SILENCE_NO_SPEECH_DETECTED",
+                    "inference_time_ms": 0.0,
+                },
+                "speaker_verification": {
+                    "status": "SKIPPED_SILENCE",
+                    "speaker_id": args.get("speaker_id"),
+                    "similarity_score": None,
+                    "threshold": None,
+                    "is_match": None,
+                    "speaker_mismatch_flag": 0,
+                    "inference_time_ms": 0.0,
+                },
+                "audio_metrics": {
+                    "window_duration_sec": round(duration_sec, 2),
+                    "sample_rate": sr,
+                    "estimated_snr_db": round(snr_db, 2),
+                    "rms_db": round(rms_db, 2),
+                    "peak_amplitude": round(peak_amp, 4),
+                    "vad_status": "SILENCE_OR_BACKGROUND",
+                },
+                "pipeline_latency_ms": round(total_latency_ms, 2),
+            }
 
         preprocessed = PreprocessedAudio(
             waveform=samples,
