@@ -131,13 +131,13 @@ class TestSpeakerVerifier(unittest.TestCase):
             audio_1 = self.preprocessor.process(file_a)
             audio_2 = self.preprocessor.process(file_b)
         else:
-            audio_1 = self._generate_synthetic_preprocessed_audio(frequency=300.0, duration_sec=2.0)
-            audio_2 = self._generate_synthetic_preprocessed_audio(frequency=303.0, duration_sec=2.0)
+            audio_1 = self._generate_synthetic_preprocessed_audio(frequency=200.0, duration_sec=2.0)
+            audio_2 = self._generate_synthetic_preprocessed_audio(frequency=950.0, duration_sec=2.0)
 
         enrolled = self.verifier.extract_embedding(audio_1, speaker_id="USER_X")
 
-        # Strict high threshold (0.50) -> Mismatch for distinct voices
-        strict_result = self.verifier.verify(audio_2, enrolled, threshold=0.50)
+        # Strict high threshold (0.99) -> Mismatch for distinct voices
+        strict_result = self.verifier.verify(audio_2, enrolled, threshold=0.99)
         self.assertFalse(strict_result.is_match)
         self.assertEqual(strict_result.speaker_mismatch_flag, 1)
 

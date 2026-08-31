@@ -104,7 +104,8 @@ export interface CallContextState {
   transcript_text: string;
 }
 
-export type LiveSessionStatus = "idle" | "chunking" | "streaming" | "paused" | "completed" | "error";
+export type LiveSessionStatus = "idle" | "chunking" | "streaming" | "listening" | "paused" | "completed" | "error";
+export type LiveAnalysisMode = "microphone" | "simulation";
 
 export interface AudioChunkWindow {
   index: number;
@@ -112,6 +113,28 @@ export interface AudioChunkWindow {
   endTimeSec: number;
   blob: Blob;
   filename: string;
+}
+
+export interface LiveStreamAnalysisResult {
+  session_id: string;
+  call_id: string;
+  window_index: number;
+  server_latency_ms: number;
+  window_duration_sec: number;
+  sample_rate: number;
+  fake_probability: number;
+  real_probability: number;
+  acoustic_anomaly: number;
+  risk_score: number;
+  risk_level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | string;
+  recommended_action: "ALLOW" | "WARN" | "SECONDARY_VERIFICATION" | "BLOCK" | string;
+  flags: string[];
+  prosody_reasons: string[];
+  prosody_metrics: Record<string, any>;
+  deepfake_detection: DeepfakeResult;
+  speaker_verification: SpeakerVerificationDetail;
+  audio_metrics: AudioMetadata;
+  timestamp: number;
 }
 
 export interface LiveChunkResult {

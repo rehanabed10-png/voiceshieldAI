@@ -5,8 +5,10 @@ Preserves all Phase 1–5 algorithms, mathematical feature extractors, and risk 
 """
 
 import argparse
+import base64
 import json
 import os
+import struct
 import sys
 import tempfile
 import time
@@ -19,6 +21,7 @@ from app.audio.preprocessing import (
     AudioPreprocessor,
     PreprocessedAudio,
 )
+from app.audio.prosody import ProsodyAnalyzer
 from app.utils.audio_utils import (
     AudioCorruptError,
     AudioError,
@@ -27,6 +30,9 @@ from app.utils.audio_utils import (
     AudioTooShortError,
     FileNotFoundAudioError,
     UnsupportedFormatError,
+    calculate_rms,
+    calculate_snr_estimate,
+    linear_to_db,
 )
 from app.models.detector import VoiceCloneDetector
 from app.models.speaker_verifier import (
@@ -107,6 +113,7 @@ class PipelineWorker:
         self.speaker_verifier = PretrainedECAPASpeakerVerifier()
         self.speaker_verifier.load_model()
         self.speaker_store = load_persistent_store()
+        self.prosody_analyzer = ProsodyAnalyzer(sample_rate=16000)
         self.risk_engine = VoiceShieldRiskEngine()
         self.model_load_count = 1
 
@@ -154,13 +161,20 @@ class PipelineWorker:
         is_urgent = args.get("is_urgent", False)
         urgency_reason = args.get("urgency_reason")
         transcript_text = args.get("transcript_text")
-        acoustic_anomaly = args.get("acoustic_anomaly", 0.0) or 0.0
+        passed_acoustic_anomaly = args.get("acoustic_anomaly")
 
         if not audio_path or not os.path.exists(audio_path):
             raise FileNotFoundAudioError(f"Audio file not found: {audio_path}")
 
         preprocessed = self.preprocessor.process(audio_path)
         prediction_result = self.detector.predict(preprocessed)
+
+        # Deterministic prosody and acoustic anomaly analysis
+        prosody_res = self.prosody_analyzer.analyze(preprocessed)
+        if passed_acoustic_anomaly is not None and float(passed_acoustic_anomaly) > 0.0:
+            acoustic_anomaly = float(passed_acoustic_anomaly)
+        else:
+            acoustic_anomaly = prosody_res.acoustic_anomaly
 
         self.sync_store()
         speaker_mismatch_signal = 0
@@ -244,12 +258,14 @@ class PipelineWorker:
             "risk_signals": {
                 "fake_probability": round(prediction_result.fake_probability, 4),
                 "speaker_mismatch": speaker_mismatch_signal,
-                "acoustic_anomaly": float(acoustic_anomaly),
+                "acoustic_anomaly": round(float(acoustic_anomaly), 4),
                 "context_flag": risk_assessment.signals.get("context_flag", 0.0),
                 "speaker_verification_status": speaker_verification_status,
-                "acoustic_model_status": "INPUT_SUPPLIED (Specialized Prosody Model Deferred)",
+                "acoustic_model_status": "DETERMINISTIC_PROSODY_EVALUATED",
             },
             "flags": risk_assessment.flags,
+            "prosody_reasons": prosody_res.prosody_reasons,
+            "prosody_metrics": prosody_res.metrics,
             "recommended_action": risk_assessment.recommended_action,
             "audio_metadata": {
                 "sample_rate": preprocessed.sample_rate,
@@ -258,6 +274,155 @@ class PipelineWorker:
                 "estimated_snr_db": round(preprocessed.estimated_snr_db, 2),
                 "rms_db": round(preprocessed.rms_energy_db, 2),
             },
+        }
+
+    def handle_stream_chunk(self, args: dict) -> dict:
+        """
+        Processes a live streaming microphone audio window (~1.5–2.0s) in-memory without disk I/O.
+        Reuses loaded Wav2Vec2 detector, ProsodyAnalyzer, Speaker Verifier, and Risk Engine.
+        """
+        start_time = time.perf_counter()
+        samples: List[float] = []
+
+        if "pcm_bytes_b64" in args and args["pcm_bytes_b64"]:
+            raw_bytes = base64.b64decode(args["pcm_bytes_b64"])
+            total_samples = len(raw_bytes) // 2
+            if total_samples > 0:
+                ints = struct.unpack(f"<{total_samples}h", raw_bytes[: total_samples * 2])
+                samples = [float(v) / 32768.0 for v in ints]
+        elif "samples" in args and isinstance(args["samples"], list):
+            samples = [float(x) for x in args["samples"]]
+        elif "file" in args and args["file"] and os.path.exists(args["file"]):
+            preprocessed_temp = self.preprocessor.process(args["file"])
+            samples = preprocessed_temp.waveform
+        else:
+            raise ValueError("No audio payload provided. Supply 'pcm_bytes_b64', 'samples', or 'file'.")
+
+        if not samples or len(samples) < 8000:  # Minimum 0.5s at 16kHz
+            raise AudioTooShortError(len(samples) / 16000.0, 0.5)
+
+        sr = 16000
+        duration_sec = len(samples) / float(sr)
+
+        rms = calculate_rms(samples)
+        rms_db = linear_to_db(rms)
+        snr_db = calculate_snr_estimate(samples)
+
+        preprocessed = PreprocessedAudio(
+            waveform=samples,
+            sample_rate=sr,
+            original_duration_sec=round(duration_sec, 3),
+            processed_duration_sec=round(duration_sec, 3),
+            rms_energy_db=round(rms_db, 2),
+            estimated_snr_db=round(snr_db, 2),
+            channels=1,
+            metadata={"stream_window": True, "samples": len(samples)},
+        )
+
+        # 1. Wav2Vec2 Deepfake Inference
+        prediction_result = self.detector.predict(preprocessed)
+
+        # 2. Deterministic Prosody & Acoustic Anomaly Analysis
+        prosody_res = self.prosody_analyzer.analyze(preprocessed)
+
+        # 3. Speaker Biometric Verification (if enrolled)
+        speaker_id = args.get("speaker_id")
+        threshold = args.get("threshold")
+        self.sync_store()
+        speaker_mismatch_signal = 0
+        speaker_verification_status = "NOT_EVALUATED"
+        speaker_detail = {
+            "status": "NOT_EVALUATED",
+            "speaker_id": speaker_id,
+            "similarity_score": None,
+            "threshold": None,
+            "is_match": None,
+            "speaker_mismatch_flag": None,
+            "inference_time_ms": None,
+        }
+
+        if speaker_id:
+            enrolled = self.speaker_store.get(speaker_id)
+            if enrolled:
+                ver_res = self.speaker_verifier.verify(
+                    audio=preprocessed,
+                    enrolled_embedding=enrolled,
+                    threshold=threshold,
+                )
+                speaker_mismatch_signal = ver_res.speaker_mismatch_flag
+                speaker_verification_status = "MATCH" if ver_res.is_match else "MISMATCH"
+                speaker_detail = {
+                    "status": "EVALUATED",
+                    "speaker_id": speaker_id,
+                    "similarity_score": round(ver_res.similarity_score, 4),
+                    "threshold": round(ver_res.threshold, 4),
+                    "is_match": ver_res.is_match,
+                    "speaker_mismatch_flag": ver_res.speaker_mismatch_flag,
+                    "inference_time_ms": round(ver_res.inference_time_ms, 2),
+                }
+            else:
+                speaker_verification_status = "NOT_ENROLLED"
+                speaker_detail = {
+                    "status": "NOT_ENROLLED",
+                    "speaker_id": speaker_id,
+                    "similarity_score": None,
+                    "threshold": None,
+                    "is_match": None,
+                    "speaker_mismatch_flag": None,
+                    "inference_time_ms": None,
+                }
+
+        # 4. Context & Risk Engine Fusion
+        raw_context = args.get("context", {}) or {}
+        call_context = CallContext(
+            caller_id=raw_context.get("caller_id") or args.get("caller_id"),
+            is_caller_recognized=raw_context.get("is_caller_recognized", True),
+            is_previously_flagged=raw_context.get("is_previously_flagged", False),
+            claimed_role=raw_context.get("claimed_role") or args.get("claimed_role"),
+            requested_transaction_amount=raw_context.get("requested_amount") or args.get("requested_amount"),
+            normal_transaction_amount=raw_context.get("normal_amount") or args.get("normal_amount"),
+            is_urgent=raw_context.get("is_urgent", False) or args.get("is_urgent", False),
+            urgency_reason=raw_context.get("urgency_reason") or args.get("urgency_reason"),
+            transcript_text=raw_context.get("transcript_text") or args.get("transcript_text"),
+        )
+
+        risk_assessment = self.risk_engine.evaluate(
+            fake_probability=prediction_result.fake_probability,
+            speaker_mismatch=speaker_mismatch_signal,
+            acoustic_anomaly=prosody_res.acoustic_anomaly,
+            context=call_context,
+        )
+
+        total_latency_ms = (time.perf_counter() - start_time) * 1000.0
+        call_id = args.get("call_id") or f"LIVE-{uuid.uuid4().hex[:6].upper()}"
+
+        return {
+            "call_id": call_id,
+            "window_index": args.get("window_index", 0),
+            "fake_probability": round(prediction_result.fake_probability, 4),
+            "real_probability": round(prediction_result.real_probability, 4),
+            "acoustic_anomaly": round(prosody_res.acoustic_anomaly, 4),
+            "risk_score": risk_assessment.risk_score,
+            "risk_level": risk_assessment.risk_level,
+            "recommended_action": risk_assessment.recommended_action,
+            "flags": risk_assessment.flags,
+            "prosody_reasons": prosody_res.prosody_reasons,
+            "prosody_metrics": prosody_res.metrics,
+            "deepfake_detection": {
+                "prediction": prediction_result.prediction,
+                "fake_probability": round(prediction_result.fake_probability, 4),
+                "real_probability": round(prediction_result.real_probability, 4),
+                "model_type": prediction_result.metadata.get("model_type", "Wav2Vec2"),
+                "inference_time_ms": round(prediction_result.metadata.get("inference_time_ms", 0.0), 2),
+            },
+            "speaker_verification": speaker_detail,
+            "audio_metrics": {
+                "window_duration_sec": round(duration_sec, 2),
+                "sample_rate": sr,
+                "estimated_snr_db": round(snr_db, 2),
+                "rms_db": round(rms_db, 2),
+            },
+            "pipeline_latency_ms": round(total_latency_ms, 2),
         }
 
     def handle_enroll(self, args: dict) -> dict:
@@ -345,6 +510,9 @@ class PipelineWorker:
                 return {"status": 200, "data": data}
             elif cmd == "analyze":
                 data = self.handle_analyze(args)
+                return {"status": 200, "data": data}
+            elif cmd in ("stream-chunk", "live-chunk"):
+                data = self.handle_stream_chunk(args)
                 return {"status": 200, "data": data}
             elif cmd == "enroll":
                 data = self.handle_enroll(args)

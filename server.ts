@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import http from "http";
 import path from "path";
 import fs from "fs";
 import { ChildProcess, spawn } from "child_process";
@@ -7,6 +8,7 @@ import multer from "multer";
 import os from "os";
 import { createServer as createViteServer } from "vite";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { WebSocketServer, WebSocket, RawData } from "ws";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -688,10 +690,233 @@ const handleVerifySpeaker = async (req: express.Request, res: express.Response) 
 app.post("/verify-speaker", upload.single("file"), handleVerifySpeaker);
 app.post("/api/verify-speaker", upload.single("file"), handleVerifySpeaker);
 
+// 7. Live Stream Chunk (REST Fallback): /stream-chunk and /api/stream-chunk
+const handleStreamChunk = async (req: express.Request, res: express.Response) => {
+  const { pcm_bytes_b64, samples, file, speaker_id, threshold, context, window_index, call_id } = req.body;
+  if (!pcm_bytes_b64 && !samples && !file) {
+    return res.status(400).json({
+      error_type: "MissingPayloadError",
+      message: "Supply 'pcm_bytes_b64', 'samples', or 'file' for stream chunk analysis.",
+    });
+  }
+
+  try {
+    const result = await daemonManager.request("stream-chunk", {
+      pcm_bytes_b64,
+      samples,
+      file,
+      speaker_id,
+      threshold,
+      context,
+      window_index: window_index || 0,
+      call_id,
+    });
+    res.status(result.status).json(result.data);
+  } catch (err: any) {
+    res.status(500).json({
+      error_type: "InferenceError",
+      message: err.message || "Failed to process stream chunk.",
+    });
+  }
+};
+
+app.post("/stream-chunk", handleStreamChunk);
+app.post("/api/stream-chunk", handleStreamChunk);
+
+// ----------------------------------------------------
+// WEBSOCKET LIVE STREAMING ENDPOINT (/ws/live-stream)
+// ----------------------------------------------------
+function setupLiveStreamingWebSocket(server: http.Server) {
+  const wss = new WebSocketServer({ server, path: "/ws/live-stream" });
+
+  console.log("[WebSocket] Live streaming WebSocket endpoint initialized on /ws/live-stream");
+
+  wss.on("connection", (ws: WebSocket, req) => {
+    const clientIp = req.socket.remoteAddress || "unknown";
+    const sessionId = `LIVE-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    console.log(`[WebSocket:Connect] Client connected [${sessionId}] from ${clientIp}`);
+
+    // Per-connection session state
+    let rollingBuffer = Buffer.alloc(0);
+    // 16 kHz mono 16-bit PCM = 32,000 bytes per second
+    let windowDurationSec = 1.5;
+    let windowSizeBytes = Math.round(windowDurationSec * 16000 * 2);
+    // Maximum buffer capacity to prevent memory growth (3.0s = 96,000 bytes)
+    const maxBufferSize = Math.round(3.0 * 16000 * 2);
+    const minEvaluationIntervalMs = 350;
+
+    let isAnalyzing = false;
+    let lastAnalysisTime = 0;
+    let windowIndex = 0;
+    let speakerId: string | undefined = undefined;
+    let threshold: number | undefined = undefined;
+    let callContext: Record<string, any> = {};
+
+    const evaluateWindow = async () => {
+      if (isAnalyzing || rollingBuffer.length < windowSizeBytes) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastAnalysisTime < minEvaluationIntervalMs) {
+        return;
+      }
+
+      isAnalyzing = true;
+      lastAnalysisTime = now;
+      windowIndex++;
+
+      // Extract window from end of rolling buffer
+      const windowBuf = rollingBuffer.subarray(rollingBuffer.length - windowSizeBytes);
+      const base64Chunk = windowBuf.toString("base64");
+
+      const startTime = performance.now();
+      try {
+        const result = await daemonManager.request("stream-chunk", {
+          pcm_bytes_b64: base64Chunk,
+          window_index: windowIndex,
+          speaker_id: speakerId,
+          threshold: threshold,
+          context: callContext,
+          call_id: sessionId,
+        });
+
+        const latencyMs = Math.round(performance.now() - startTime);
+
+        if (ws.readyState === WebSocket.OPEN) {
+          if (result.status === 200 && result.data) {
+            ws.send(
+              JSON.stringify({
+                type: "analysis_result",
+                session_id: sessionId,
+                call_id: sessionId,
+                window_index: windowIndex,
+                server_latency_ms: latencyMs,
+                window_duration_sec: windowDurationSec,
+                sample_rate: 16000,
+                fake_probability: result.data.fake_probability,
+                real_probability: result.data.real_probability,
+                acoustic_anomaly: result.data.acoustic_anomaly,
+                risk_score: result.data.risk_score,
+                risk_level: result.data.risk_level,
+                recommended_action: result.data.recommended_action,
+                flags: result.data.flags,
+                prosody_reasons: result.data.prosody_reasons || [],
+                prosody_metrics: result.data.prosody_metrics || {},
+                deepfake_detection: result.data.deepfake_detection,
+                speaker_verification: result.data.speaker_verification,
+                audio_metrics: result.data.audio_metrics,
+                timestamp: Date.now(),
+              })
+            );
+          } else {
+            ws.send(
+              JSON.stringify({
+                type: "analysis_error",
+                session_id: sessionId,
+                window_index: windowIndex,
+                error: result.data?.message || "Inference error during live stream analysis.",
+              })
+            );
+          }
+        }
+      } catch (err: any) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "analysis_error",
+              session_id: sessionId,
+              window_index: windowIndex,
+              error: err.message || "Pipeline execution failed.",
+            })
+          );
+        }
+      } finally {
+        isAnalyzing = false;
+        // Keep buffer bounded
+        if (rollingBuffer.length > maxBufferSize) {
+          rollingBuffer = rollingBuffer.subarray(rollingBuffer.length - maxBufferSize);
+        }
+      }
+    };
+
+    ws.on("message", async (data: RawData, isBinary: boolean) => {
+      try {
+        if (isBinary) {
+          // Direct binary PCM16 audio chunk from browser AudioWorklet or ScriptProcessor
+          const chunkBuf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+          rollingBuffer = Buffer.concat([rollingBuffer, chunkBuf]);
+          await evaluateWindow();
+        } else {
+          // JSON control message or base64 audio payload
+          const text = data.toString("utf-8");
+          const msg = JSON.parse(text);
+
+          if (msg.type === "config" || msg.type === "start") {
+            if (msg.window_duration_sec && typeof msg.window_duration_sec === "number") {
+              windowDurationSec = Math.max(0.8, Math.min(3.0, msg.window_duration_sec));
+              windowSizeBytes = Math.round(windowDurationSec * 16000 * 2);
+            }
+            if (msg.speaker_id) speakerId = String(msg.speaker_id);
+            if (msg.threshold !== undefined) threshold = parseFloat(msg.threshold);
+            if (msg.context && typeof msg.context === "object") callContext = msg.context;
+
+            ws.send(
+              JSON.stringify({
+                type: "session_ready",
+                session_id: sessionId,
+                window_duration_sec: windowDurationSec,
+                window_size_bytes: windowSizeBytes,
+                sample_rate: 16000,
+                speaker_id: speakerId || null,
+              })
+            );
+          } else if (msg.type === "audio_chunk" && msg.data) {
+            const chunkBuf = Buffer.from(msg.data, "base64");
+            rollingBuffer = Buffer.concat([rollingBuffer, chunkBuf]);
+            await evaluateWindow();
+          } else if (msg.type === "reset") {
+            rollingBuffer = Buffer.alloc(0);
+            windowIndex = 0;
+            ws.send(JSON.stringify({ type: "session_reset", session_id: sessionId }));
+          } else if (msg.type === "stop") {
+            rollingBuffer = Buffer.alloc(0);
+            ws.send(JSON.stringify({ type: "session_stopped", session_id: sessionId }));
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[WebSocket:MessageError] ${err.message}`);
+      }
+    });
+
+    ws.on("close", (code) => {
+      console.log(`[WebSocket:Disconnect] Client disconnected [${sessionId}], code: ${code}`);
+      rollingBuffer = Buffer.alloc(0);
+    });
+
+    ws.on("error", (err) => {
+      console.warn(`[WebSocket:Error] Client [${sessionId}] error:`, err.message);
+      rollingBuffer = Buffer.alloc(0);
+    });
+
+    // Send initial handshake acknowledgment
+    ws.send(
+      JSON.stringify({
+        type: "connected",
+        session_id: sessionId,
+        endpoint: "/ws/live-stream",
+        expected_audio_format: "16000Hz mono PCM16 (little-endian)",
+        default_window_sec: windowDurationSec,
+      })
+    );
+  });
+}
+
 // ----------------------------------------------------
 // VITE INTEGRATION / STATIC SERVING
 // ----------------------------------------------------
 async function startServer() {
+  const server = http.createServer(app);
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -706,7 +931,10 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  // Mount WebSocket streaming server on the HTTP server instance
+  setupLiveStreamingWebSocket(server);
+
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`[VoiceShield Server] Listening on http://0.0.0.0:${PORT}`);
   });
 }
