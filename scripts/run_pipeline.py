@@ -13,10 +13,13 @@ import struct
 import sys
 import tempfile
 import time
+from typing import Any, Dict, List, Optional
 import uuid
 
 # Add repository root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+SPEAKER_STORE_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "speakers.json")
 
 from app.audio.preprocessing import (
     AudioPreprocessor,
@@ -48,8 +51,178 @@ from app.models.speaker_verifier import (
 from app.risk.context import CallContext
 from app.risk.scoring import VoiceShieldRiskEngine
 
-# Persistent in-process or file-backed session store for speaker profiles
-SPEAKER_STORE_FILE = os.path.join(tempfile.gettempdir(), "voiceshield_speaker_store.json")
+def extract_call_context(args: dict) -> CallContext:
+    """
+    Helper to extract CallContext.
+    Enforces strict security hierarchy: If a server-enriched/sanitized context
+    dictionary is present, security-critical fields are read exclusively from
+    context and cannot be overridden by loose root-level request arguments.
+    """
+    raw_context = args.get("context", {}) or {}
+    if isinstance(raw_context, str):
+        try:
+            raw_context = json.loads(raw_context)
+        except Exception:
+            raw_context = {}
+
+    has_enriched_context = isinstance(raw_context, dict) and len(raw_context) > 0
+
+    if has_enriched_context:
+        # Protected security-sensitive fields come EXCLUSIVELY from raw_context
+        org_id = raw_context.get("organization_id")
+        contact_id = raw_context.get("contact_id")
+        contact_name = raw_context.get("contact_name")
+        contact_role = raw_context.get("contact_role")
+        is_verified = raw_context.get("is_verified")
+        flag_reason = raw_context.get("flag_reason")
+        context_source = raw_context.get("context_source", "SUPABASE_INTELLIGENCE")
+        context_available = raw_context.get("context_available", True)
+
+        # Boolean security fields
+        is_recog = raw_context.get("is_caller_recognized", True)
+        if isinstance(is_recog, str):
+            is_recog = is_recog.lower() == "true"
+
+        is_flagged = raw_context.get("is_previously_flagged", False)
+        if isinstance(is_flagged, str):
+            is_flagged = is_flagged.lower() == "true"
+
+        role_mis = raw_context.get("role_mismatch", False)
+        if isinstance(role_mis, str):
+            role_mis = role_mis.lower() == "true"
+
+        has_fraud_hist = raw_context.get("has_prior_fraud_history", False)
+        if isinstance(has_fraud_hist, str):
+            has_fraud_hist = has_fraud_hist.lower() == "true"
+
+        fraud_cnt = int(raw_context.get("fraud_history_count", 0) or 0)
+        fraud_types = raw_context.get("recent_fraud_types", []) or []
+
+        hold_amt = raw_context.get("transaction_auto_hold_amount")
+        hold_amt_val = float(hold_amt) if hold_amt is not None and str(hold_amt).strip() != "" else None
+
+        # User/Session intent fields (can fallback to args if not in raw_context)
+        caller_id = raw_context.get("caller_id") or args.get("caller_id")
+        claimed_role = raw_context.get("claimed_role") or args.get("claimed_role")
+
+        req_amt = (
+            raw_context.get("requested_amount")
+            if raw_context.get("requested_amount") is not None
+            else raw_context.get("requested_transaction_amount")
+            if raw_context.get("requested_transaction_amount") is not None
+            else args.get("requested_amount")
+            if args.get("requested_amount") is not None
+            else args.get("requested_transaction_amount")
+        )
+        req_amt_val = float(req_amt) if req_amt is not None and str(req_amt).strip() != "" else None
+
+        norm_amt = (
+            raw_context.get("normal_amount")
+            if raw_context.get("normal_amount") is not None
+            else raw_context.get("normal_transaction_amount")
+            if raw_context.get("normal_transaction_amount") is not None
+            else args.get("normal_amount")
+            if args.get("normal_amount") is not None
+            else args.get("normal_transaction_amount")
+        )
+        norm_amt_val = float(norm_amt) if norm_amt is not None and str(norm_amt).strip() != "" else None
+
+        tx_ref = raw_context.get("transaction_reference") or args.get("transaction_reference")
+
+        is_urg = raw_context.get("is_urgent") if raw_context.get("is_urgent") is not None else args.get("is_urgent", False)
+        if isinstance(is_urg, str):
+            is_urg = is_urg.lower() == "true"
+
+        urg_reason = raw_context.get("urgency_reason") or args.get("urgency_reason")
+        transcript = raw_context.get("transcript_text") or args.get("transcript_text")
+        susp_keys = raw_context.get("suspicious_keywords_found") or args.get("suspicious_keywords_found", []) or []
+
+        return CallContext(
+            caller_id=caller_id,
+            is_caller_recognized=bool(is_recog),
+            is_previously_flagged=bool(is_flagged),
+            claimed_role=claimed_role,
+            requested_transaction_amount=req_amt_val,
+            normal_transaction_amount=norm_amt_val,
+            is_urgent=bool(is_urg),
+            urgency_reason=urg_reason,
+            transcript_text=transcript,
+            suspicious_keywords_found=susp_keys,
+            organization_id=org_id,
+            contact_id=contact_id,
+            contact_name=contact_name,
+            contact_role=contact_role,
+            is_verified=is_verified,
+            role_mismatch=bool(role_mis),
+            flag_reason=flag_reason,
+            transaction_reference=tx_ref,
+            transaction_auto_hold_amount=hold_amt_val,
+            has_prior_fraud_history=bool(has_fraud_hist),
+            fraud_history_count=fraud_cnt,
+            recent_fraud_types=fraud_types,
+            context_source=context_source,
+            context_available=context_available,
+        )
+
+    # Legacy flat args fallback (only when no nested context was provided)
+    req_amt = args.get("requested_amount") if args.get("requested_amount") is not None else args.get("requested_transaction_amount")
+    req_amt_val = float(req_amt) if req_amt is not None and str(req_amt).strip() != "" else None
+
+    norm_amt = args.get("normal_amount") if args.get("normal_amount") is not None else args.get("normal_transaction_amount")
+    norm_amt_val = float(norm_amt) if norm_amt is not None and str(norm_amt).strip() != "" else None
+
+    hold_amt = args.get("transaction_auto_hold_amount")
+    hold_amt_val = float(hold_amt) if hold_amt is not None and str(hold_amt).strip() != "" else None
+
+    is_recog = args.get("is_caller_recognized", True)
+    if isinstance(is_recog, str):
+        is_recog = is_recog.lower() == "true"
+
+    is_flagged = args.get("is_previously_flagged", False)
+    if isinstance(is_flagged, str):
+        is_flagged = is_flagged.lower() == "true"
+
+    is_urg = args.get("is_urgent", False)
+    if isinstance(is_urg, str):
+        is_urg = is_urg.lower() == "true"
+
+    role_mis = args.get("role_mismatch", False)
+    if isinstance(role_mis, str):
+        role_mis = role_mis.lower() == "true"
+
+    has_fraud_hist = args.get("has_prior_fraud_history", False)
+    if isinstance(has_fraud_hist, str):
+        has_fraud_hist = has_fraud_hist.lower() == "true"
+
+    fraud_cnt = int(args.get("fraud_history_count", 0) or 0)
+    fraud_types = args.get("recent_fraud_types", []) or []
+
+    return CallContext(
+        caller_id=args.get("caller_id"),
+        is_caller_recognized=bool(is_recog),
+        is_previously_flagged=bool(is_flagged),
+        claimed_role=args.get("claimed_role"),
+        requested_transaction_amount=req_amt_val,
+        normal_transaction_amount=norm_amt_val,
+        is_urgent=bool(is_urg),
+        urgency_reason=args.get("urgency_reason"),
+        transcript_text=args.get("transcript_text"),
+        suspicious_keywords_found=args.get("suspicious_keywords_found", []) or [],
+        organization_id=args.get("organization_id"),
+        contact_id=args.get("contact_id"),
+        contact_name=args.get("contact_name"),
+        contact_role=args.get("contact_role"),
+        is_verified=args.get("is_verified"),
+        role_mismatch=bool(role_mis),
+        flag_reason=args.get("flag_reason"),
+        transaction_reference=args.get("transaction_reference"),
+        transaction_auto_hold_amount=hold_amt_val,
+        has_prior_fraud_history=bool(has_fraud_hist),
+        fraud_history_count=fraud_cnt,
+        recent_fraud_types=fraud_types,
+        context_source=args.get("context_source", "DEFAULT"),
+        context_available=args.get("context_available", True),
+    )
 
 
 def load_persistent_store() -> InMemorySpeakerStore:
@@ -263,17 +436,7 @@ class PipelineWorker:
                     "inference_time_ms": None,
                 }
 
-        call_context = CallContext(
-            caller_id=caller_id,
-            is_caller_recognized=is_caller_recognized,
-            is_previously_flagged=is_previously_flagged,
-            claimed_role=claimed_role,
-            requested_transaction_amount=requested_amount,
-            normal_transaction_amount=normal_amount,
-            is_urgent=is_urgent,
-            urgency_reason=urgency_reason,
-            transcript_text=transcript_text,
-        )
+        call_context = extract_call_context(args)
 
         risk_assessment = self.risk_engine.evaluate(
             fake_probability=prediction_result.fake_probability,
@@ -308,6 +471,20 @@ class PipelineWorker:
                 "speaker_verification_status": speaker_verification_status,
                 "acoustic_model_status": "DETERMINISTIC_PROSODY_ANALYSIS",
                 "prosody_reasons": prosody_result.anomaly_reasons,
+            },
+            "context_intelligence": {
+                "context_source": call_context.context_source,
+                "context_available": call_context.context_available,
+                "organization_id": call_context.organization_id,
+                "contact_id": call_context.contact_id,
+                "contact_name": call_context.contact_name,
+                "contact_role": call_context.contact_role,
+                "is_caller_recognized": call_context.is_caller_recognized,
+                "is_previously_flagged": call_context.is_previously_flagged,
+                "is_verified": call_context.is_verified,
+                "role_mismatch": call_context.role_mismatch,
+                "has_prior_fraud_history": call_context.has_prior_fraud_history,
+                "fraud_history_count": call_context.fraud_history_count,
             },
             "flags": risk_assessment.flags,
             "prosody_reasons": prosody_result.anomaly_reasons,
@@ -488,18 +665,7 @@ class PipelineWorker:
                 }
 
         # 4. Context & Risk Engine Fusion
-        raw_context = args.get("context", {}) or {}
-        call_context = CallContext(
-            caller_id=raw_context.get("caller_id") or args.get("caller_id"),
-            is_caller_recognized=raw_context.get("is_caller_recognized", True),
-            is_previously_flagged=raw_context.get("is_previously_flagged", False),
-            claimed_role=raw_context.get("claimed_role") or args.get("claimed_role"),
-            requested_transaction_amount=raw_context.get("requested_amount") or args.get("requested_amount"),
-            normal_transaction_amount=raw_context.get("normal_amount") or args.get("normal_amount"),
-            is_urgent=raw_context.get("is_urgent", False) or args.get("is_urgent", False),
-            urgency_reason=raw_context.get("urgency_reason") or args.get("urgency_reason"),
-            transcript_text=raw_context.get("transcript_text") or args.get("transcript_text"),
-        )
+        call_context = extract_call_context(args)
 
         risk_assessment = self.risk_engine.evaluate(
             fake_probability=prediction_result.fake_probability,
@@ -525,6 +691,20 @@ class PipelineWorker:
             "prosody_reasons": prosody_res.anomaly_reasons,
             "prosody_metrics": {k: round(float(v), 4) for k, v in prosody_res.features.items()},
             "prosody_analysis": prosody_res.to_dict(),
+            "context_intelligence": {
+                "context_source": call_context.context_source,
+                "context_available": call_context.context_available,
+                "organization_id": call_context.organization_id,
+                "contact_id": call_context.contact_id,
+                "contact_name": call_context.contact_name,
+                "contact_role": call_context.contact_role,
+                "is_caller_recognized": call_context.is_caller_recognized,
+                "is_previously_flagged": call_context.is_previously_flagged,
+                "is_verified": call_context.is_verified,
+                "role_mismatch": call_context.role_mismatch,
+                "has_prior_fraud_history": call_context.has_prior_fraud_history,
+                "fraud_history_count": call_context.fraud_history_count,
+            },
             "deepfake_detection": {
                 "prediction": prediction_result.prediction,
                 "fake_probability": round(prediction_result.fake_probability, 4),
@@ -774,17 +954,7 @@ def cmd_analyze(args):
                     "inference_time_ms": None,
                 }
 
-        call_context = CallContext(
-            caller_id=caller_id,
-            is_caller_recognized=is_caller_recognized,
-            is_previously_flagged=is_previously_flagged,
-            claimed_role=claimed_role,
-            requested_transaction_amount=requested_amount,
-            normal_transaction_amount=normal_amount,
-            is_urgent=is_urgent,
-            urgency_reason=urgency_reason,
-            transcript_text=transcript_text,
-        )
+        call_context = extract_call_context(vars(args))
 
         risk_engine = VoiceShieldRiskEngine()
         risk_assessment = risk_engine.evaluate(
@@ -989,6 +1159,7 @@ def main():
     p_analyze.add_argument("--urgency-reason", default=None)
     p_analyze.add_argument("--transcript-text", default=None)
     p_analyze.add_argument("--acoustic-anomaly", type=float, default=0.0)
+    p_analyze.add_argument("--context", default=None)
 
     # Enroll
     p_enroll = subparsers.add_parser("enroll")

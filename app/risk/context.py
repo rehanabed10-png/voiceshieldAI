@@ -53,6 +53,7 @@ HIGH_AUTHORITY_ROLES: Set[str] = {
 class CallContext:
     """
     Contextual information regarding the call, caller identity, transaction, and transcript.
+    Supports enriched multi-tenant database context and enterprise fraud intelligence.
     """
     caller_id: Optional[str] = None
     is_caller_recognized: bool = True
@@ -64,6 +65,22 @@ class CallContext:
     urgency_reason: Optional[str] = None
     transcript_text: Optional[str] = None
     suspicious_keywords_found: List[str] = field(default_factory=list)
+    
+    # Enriched Multi-Tenant Database Context (Phase 1 Backend Integration)
+    organization_id: Optional[str] = None
+    contact_id: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_role: Optional[str] = None
+    is_verified: Optional[bool] = None
+    role_mismatch: bool = False
+    flag_reason: Optional[str] = None
+    transaction_reference: Optional[str] = None
+    transaction_auto_hold_amount: Optional[float] = None
+    has_prior_fraud_history: bool = False
+    fraud_history_count: int = 0
+    recent_fraud_types: List[str] = field(default_factory=list)
+    context_source: str = "DEFAULT"
+    context_available: bool = True
 
 
 @dataclass
@@ -75,6 +92,7 @@ class ContextEvaluation:
     is_suspicious: bool                 # Boolean decision threshold (context_flag > 0)
     flags: List[str]                    # Human-readable explanation reasons
     severity_score: float               # Raw unweighted context risk penalty
+    context_metadata: dict = field(default_factory=dict)
 
 
 class RuleBasedContextAnalyzer:
@@ -105,13 +123,24 @@ class RuleBasedContextAnalyzer:
         flags: List[str] = []
         severity_points: float = 0.0
 
-        # Rule 1: History of prior fraudulent activity
-        if context.is_previously_flagged:
-            flags.append("Caller ID or voice history previously flagged for suspicious activity")
+        # Rule 1: History of prior fraudulent activity or threat intelligence records
+        if context.is_previously_flagged or context.has_prior_fraud_history or context.fraud_history_count > 0:
+            if context.flag_reason:
+                flags.append(f"Caller previously flagged for suspicious activity ({context.flag_reason})")
+            elif context.recent_fraud_types:
+                types_str = ", ".join(context.recent_fraud_types[:3])
+                flags.append(f"Caller ID or identity linked to prior fraud incident records: {types_str}")
+            else:
+                flags.append("Caller ID or voice history previously flagged for suspicious activity")
             severity_points += 0.8
 
-        # Rule 2: Unrecognized caller asserting high-authority executive role
-        if not context.is_caller_recognized and context.claimed_role:
+        # Rule 2: Role verification & executive impersonation
+        if context.role_mismatch and context.claimed_role and context.contact_role:
+            flags.append(
+                f"Role Mismatch: Claimed role '{context.claimed_role}' does not match registered contact role '{context.contact_role}'"
+            )
+            severity_points += 0.7
+        elif not context.is_caller_recognized and context.claimed_role:
             role_lower = context.claimed_role.strip().lower()
             if any(auth_role in role_lower for auth_role in HIGH_AUTHORITY_ROLES):
                 flags.append(
@@ -125,11 +154,20 @@ class RuleBasedContextAnalyzer:
             flags.append("Incoming call from unrecognized/unknown contact")
             severity_points += 0.2
 
-        # Rule 3: Transaction amount anomalies
+        # Rule 3: Transaction amount anomalies & policy auto-hold limits
         if context.requested_transaction_amount is not None and context.requested_transaction_amount > 0:
             req_amt = context.requested_transaction_amount
             norm_amt = context.normal_transaction_amount
+            hold_amt = context.transaction_auto_hold_amount
 
+            # 3a. Organization policy auto-hold check
+            if hold_amt is not None and hold_amt > 0 and req_amt >= hold_amt:
+                flags.append(
+                    f"Requested transaction (${req_amt:,.2f}) exceeds organization auto-hold policy (${hold_amt:,.2f})"
+                )
+                severity_points += 0.6
+
+            # 3b. Normal historical baseline ratio check
             if norm_amt is not None and norm_amt > 0:
                 ratio = req_amt / norm_amt
                 if ratio >= self.transaction_deviation_multiplier:
@@ -178,9 +216,19 @@ class RuleBasedContextAnalyzer:
                 context_flag = 1.0
             is_suspicious = context_flag > 0.0
 
+        metadata = {
+            "context_source": context.context_source,
+            "context_available": context.context_available,
+            "organization_id": context.organization_id,
+            "contact_id": context.contact_id,
+            "is_verified": context.is_verified,
+            "detected_keywords": detected_keywords,
+        }
+
         return ContextEvaluation(
             context_flag=context_flag,
             is_suspicious=is_suspicious,
             flags=flags,
             severity_score=round(severity_points, 2),
+            context_metadata=metadata,
         )

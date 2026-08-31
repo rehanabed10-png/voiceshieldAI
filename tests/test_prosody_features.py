@@ -5,8 +5,14 @@ explainable diagnostic reasons, and risk engine integration.
 """
 
 import math
+import random
 import unittest
-import numpy as np
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
 
 from app.audio.preprocessing import AudioPreprocessor, PreprocessedAudio
 from app.audio.prosody import (
@@ -27,31 +33,51 @@ def generate_synthetic_tone(
 ) -> PreprocessedAudio:
     """Generates a synthetic tone/waveform for deterministic prosody testing."""
     n_samples = int(duration_sec * sample_rate)
-    t = np.linspace(0, duration_sec, n_samples, endpoint=False)
+    
+    if NUMPY_AVAILABLE:
+        t = np.linspace(0, duration_sec, n_samples, endpoint=False)
+        if add_jitter:
+            f_inst = freq_hz + 40.0 * np.sin(2 * np.pi * 3.0 * t) + 15.0 * np.sin(2 * np.pi * 7.5 * t)
+            phase = 2 * np.pi * np.cumsum(f_inst) / sample_rate
+            waveform = amplitude * np.sin(phase)
+        else:
+            waveform = amplitude * np.sin(2 * np.pi * freq_hz * t)
 
-    if add_jitter:
-        # Modulate frequency randomly to simulate expressive/natural pitch variation
-        f_inst = freq_hz + 40.0 * np.sin(2 * np.pi * 3.0 * t) + 15.0 * np.sin(2 * np.pi * 7.5 * t)
-        phase = 2 * np.pi * np.cumsum(f_inst) / sample_rate
-        waveform = amplitude * np.sin(phase)
+        if add_pauses:
+            pause_len = int(0.25 * sample_rate)
+            chunk_len = int(0.60 * sample_rate)
+            for start in range(chunk_len, n_samples, chunk_len + pause_len):
+                end = min(n_samples, start + pause_len)
+                waveform[start:end] = 0.0
+
+        waveform += np.random.normal(0, 0.002, n_samples)
+        waveform = np.clip(waveform, -1.0, 1.0)
+        samples_list = waveform.tolist()
     else:
-        # Pure flat pitch (robotic monotone)
-        waveform = amplitude * np.sin(2 * np.pi * freq_hz * t)
-
-    if add_pauses:
-        # Introduce periodic 200ms pauses to simulate natural speech rhythm
-        pause_len = int(0.25 * sample_rate)
-        chunk_len = int(0.60 * sample_rate)
-        for start in range(chunk_len, n_samples, chunk_len + pause_len):
-            end = min(n_samples, start + pause_len)
-            waveform[start:end] = 0.0
-
-    # Add minor baseline background noise
-    waveform += np.random.normal(0, 0.002, n_samples)
-    waveform = np.clip(waveform, -1.0, 1.0)
+        samples_list = []
+        phase = 0.0
+        for i in range(n_samples):
+            t_sec = i / float(sample_rate)
+            if add_jitter:
+                f_inst = freq_hz + 40.0 * math.sin(2.0 * math.pi * 3.0 * t_sec) + 15.0 * math.sin(2.0 * math.pi * 7.5 * t_sec)
+                phase += 2.0 * math.pi * f_inst / float(sample_rate)
+                val = amplitude * math.sin(phase)
+            else:
+                val = amplitude * math.sin(2.0 * math.pi * freq_hz * t_sec)
+            
+            if add_pauses:
+                chunk_period = int(0.85 * sample_rate)
+                pause_len = int(0.25 * sample_rate)
+                pos_in_period = i % chunk_period
+                if pos_in_period >= (chunk_period - pause_len):
+                    val = 0.0
+            
+            val += random.gauss(0.0, 0.002)
+            val = max(-1.0, min(1.0, val))
+            samples_list.append(val)
 
     return PreprocessedAudio(
-        waveform=waveform.tolist(),
+        waveform=samples_list,
         sample_rate=sample_rate,
         original_duration_sec=duration_sec,
         processed_duration_sec=duration_sec,
@@ -106,7 +132,10 @@ class TestProsodyFeatures(unittest.TestCase):
     def test_4_low_energy_audio_handled_safely(self):
         """4. Test that near-silent or very low energy waveforms do not throw division-by-zero."""
         n_samples = 16000 * 2
-        low_energy_wave = (np.random.normal(0, 0.0001, n_samples)).tolist()
+        if NUMPY_AVAILABLE:
+            low_energy_wave = (np.random.normal(0, 0.0001, n_samples)).tolist()
+        else:
+            low_energy_wave = [random.gauss(0, 0.0001) for _ in range(n_samples)]
         audio = PreprocessedAudio(
             waveform=low_energy_wave,
             sample_rate=16000,

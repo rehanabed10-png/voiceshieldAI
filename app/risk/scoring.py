@@ -189,7 +189,7 @@ class VoiceShieldRiskEngine:
             else:
                 flags.append(f"Prosodic/acoustic anomaly detected ({signals.acoustic_anomaly:.2f})")
 
-        if signals.context_flag >= 0.5:
+        if signals.context_flag >= 0.5 or (context_reasons and len(context_reasons) > 0):
             if context_reasons:
                 flags.extend(context_reasons)
             else:

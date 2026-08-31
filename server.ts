@@ -9,6 +9,7 @@ import os from "os";
 import { createServer as createViteServer } from "vite";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { WebSocketServer, WebSocket, RawData } from "ws";
+import { ContextRetrievalService, EnrichedCallContext } from "./src/server/contextService";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -323,16 +324,22 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   console.log("[Supabase] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured. Telemetry persistence disabled.");
 }
 
+// Instantiate ContextRetrievalService singleton
+const contextService = new ContextRetrievalService(supabase);
+
 async function persistAnalysisToSupabase(
   resultData: any,
   params: Record<string, any>,
-  reqBody: Record<string, any>
+  reqBody: Record<string, any>,
+  enrichedContext?: EnrichedCallContext | null
 ): Promise<void> {
   if (!supabase || !resultData || !resultData.call_id) {
     return;
   }
 
   try {
+    const orgId = enrichedContext?.organization_id || contextService.resolveAuthoritativeOrganizationId();
+
     // 1. Resolve textual speaker_id (e.g. SPK-001) to speakers.id (UUID)
     let speakerDbUuid: string | null = null;
     const requestedSpeakerId = params.speaker_id || reqBody.speaker_id;
@@ -349,8 +356,8 @@ async function persistAnalysisToSupabase(
     }
 
     // 2. Resolve contact if caller_id or contact_id matches
-    let contactDbUuid: string | null = null;
-    if (reqBody.contact_id) {
+    let contactDbUuid: string | null = enrichedContext?.contact_id || null;
+    if (!contactDbUuid && reqBody.contact_id) {
       contactDbUuid = String(reqBody.contact_id);
     }
 
@@ -368,6 +375,7 @@ async function persistAnalysisToSupabase(
       .from("calls")
       .insert({
         call_id: resultData.call_id,
+        organization_id: orgId,
         speaker_id: speakerDbUuid,
         contact_id: contactDbUuid,
         caller_id: reqBody.caller_id ? String(reqBody.caller_id) : null,
@@ -411,6 +419,7 @@ async function persistAnalysisToSupabase(
     // 6. Insert into risk_events table
     const { error: riskErr } = await supabase.from("risk_events").insert({
       call_id: callRow.id,
+      organization_id: orgId,
       risk_score: typeof resultData.risk_score === "number" ? resultData.risk_score : null,
       risk_level: sanitizedRiskLevel,
       recommended_action: resultData.recommended_action ? String(resultData.recommended_action) : null,
@@ -437,8 +446,8 @@ async function persistAnalysisToSupabase(
           ? resultData.speaker_verification.speaker_mismatch_flag
           : (resultData.risk_signals?.speaker_mismatch ?? 0),
       acoustic_anomaly: acousticAnomalyBool,
-      caller_recognized: typeof params.is_caller_recognized === "boolean" ? params.is_caller_recognized : null,
-      previously_flagged: typeof params.is_previously_flagged === "boolean" ? params.is_previously_flagged : null,
+      caller_recognized: enrichedContext ? enrichedContext.is_caller_recognized : (typeof params.is_caller_recognized === "boolean" ? params.is_caller_recognized : null),
+      previously_flagged: enrichedContext ? enrichedContext.is_previously_flagged : (typeof params.is_previously_flagged === "boolean" ? params.is_previously_flagged : null),
       transaction_amount: typeof params.requested_amount === "number" ? params.requested_amount : null,
       normal_transaction_amount: typeof params.normal_amount === "number" ? params.normal_amount : null,
       is_urgent: typeof params.is_urgent === "boolean" ? params.is_urgent : null,
@@ -452,6 +461,43 @@ async function persistAnalysisToSupabase(
 
     if (riskErr) {
       console.warn("[Supabase:risk_events] Failed to insert risk event record:", riskErr.message);
+    }
+
+    // 7. Insert into transactions table if transaction was requested
+    if (params.requested_amount || reqBody.requested_transaction_amount) {
+      const amount = Number(params.requested_amount || reqBody.requested_transaction_amount);
+      const isAutoHold = enrichedContext?.policy?.transaction_auto_hold_amount
+        ? amount >= enrichedContext.policy.transaction_auto_hold_amount
+        : false;
+      const isHighRisk = sanitizedRiskLevel === "HIGH";
+
+      let status = "PENDING";
+      let holdReason: string | null = null;
+      if (isHighRisk) {
+        status = "HELD";
+        holdReason = "Deepfake and high fraud risk detected during voice authentication.";
+      } else if (isAutoHold) {
+        status = "HELD";
+        holdReason = `Requested amount (${amount}) exceeds enterprise policy threshold (${enrichedContext?.policy?.transaction_auto_hold_amount}).`;
+      }
+
+      await supabase.from("transactions").insert({
+        organization_id: orgId,
+        call_id: callRow.id,
+        contact_id: contactDbUuid,
+        amount: amount,
+        normal_historical_amount: params.normal_amount ? Number(params.normal_amount) : null,
+        is_urgent: typeof params.is_urgent === "boolean" ? params.is_urgent : false,
+        urgency_reason: params.urgency_reason ? String(params.urgency_reason) : null,
+        risk_score: typeof resultData.risk_score === "number" ? resultData.risk_score : null,
+        status: status,
+        hold_reason: holdReason,
+      });
+    }
+
+    // 8. Record threat intelligence alerts and fraud indicators if high risk detected
+    if (enrichedContext) {
+      await contextService.recordThreatIntelligenceIfHighRisk(callRow.id, resultData, enrichedContext);
     }
   } catch (err: any) {
     console.warn("[Supabase:Catch] Error persisting analysis metadata:", err.message);
@@ -532,6 +578,8 @@ const handleAnalyze = async (req: express.Request, res: express.Response) => {
   if (req.body.speaker_id) params.speaker_id = String(req.body.speaker_id);
   if (req.body.verification_threshold) params.threshold = parseFloat(req.body.verification_threshold);
   if (req.body.caller_id) params.caller_id = String(req.body.caller_id);
+  if (req.body.contact_id) params.contact_id = String(req.body.contact_id);
+  if (req.body.organization_id) params.organization_id = String(req.body.organization_id);
   if (req.body.is_caller_recognized !== undefined) {
     params.is_caller_recognized = String(req.body.is_caller_recognized).toLowerCase() === "true" || req.body.is_caller_recognized === true;
   }
@@ -545,6 +593,7 @@ const handleAnalyze = async (req: express.Request, res: express.Response) => {
   if (req.body.normal_transaction_amount) {
     params.normal_amount = parseFloat(req.body.normal_transaction_amount);
   }
+  if (req.body.transaction_reference) params.transaction_reference = String(req.body.transaction_reference);
   if (req.body.is_urgent !== undefined) {
     params.is_urgent = String(req.body.is_urgent).toLowerCase() === "true" || req.body.is_urgent === true;
   }
@@ -554,13 +603,38 @@ const handleAnalyze = async (req: express.Request, res: express.Response) => {
     params.acoustic_anomaly = parseFloat(req.body.acoustic_anomaly_override);
   }
 
+  let enrichedContext: EnrichedCallContext | null = null;
+
   try {
+    // 1. Retrieve enriched contextual fraud intelligence from Supabase & policies
+    try {
+      enrichedContext = await contextService.retrieveCallContext({
+        organization_id: params.organization_id,
+        caller_id: params.caller_id,
+        contact_id: params.contact_id,
+        speaker_id: params.speaker_id,
+        claimed_role: params.claimed_role,
+        requested_amount: params.requested_amount,
+        normal_amount: params.normal_amount,
+        transaction_reference: params.transaction_reference,
+        is_urgent: params.is_urgent,
+        urgency_reason: params.urgency_reason,
+        transcript_text: params.transcript_text,
+        is_caller_recognized: params.is_caller_recognized,
+        is_previously_flagged: params.is_previously_flagged,
+      });
+
+      params.context = enrichedContext;
+    } catch (ctxErr: any) {
+      console.warn("[ContextService:RetrieveError]", ctxErr.message);
+    }
+
     const result = await daemonManager.request("analyze", params);
     res.status(result.status).json(result.data);
 
     // Asynchronously persist metadata in background without blocking response
     if (result.status === 200 && result.data && result.data.call_id) {
-      persistAnalysisToSupabase(result.data, params, req.body).catch((dbErr) => {
+      persistAnalysisToSupabase(result.data, params, req.body, enrichedContext).catch((dbErr) => {
         console.warn("[Supabase:AsyncError] Unhandled error during persistence:", dbErr.message);
       });
     }
@@ -700,6 +774,29 @@ const handleStreamChunk = async (req: express.Request, res: express.Response) =>
     });
   }
 
+  let enrichedContext: EnrichedCallContext | null = null;
+  if (context && typeof context === "object") {
+    try {
+      enrichedContext = await contextService.retrieveCallContext({
+        organization_id: context.organization_id,
+        caller_id: context.caller_id,
+        contact_id: context.contact_id,
+        speaker_id: speaker_id || context.speaker_id,
+        claimed_role: context.claimed_role,
+        requested_amount: context.requested_transaction_amount ?? context.requested_amount,
+        normal_amount: context.normal_transaction_amount ?? context.normal_amount,
+        transaction_reference: context.transaction_reference,
+        is_urgent: context.is_urgent,
+        urgency_reason: context.urgency_reason,
+        transcript_text: context.transcript_text,
+        is_caller_recognized: context.is_caller_recognized,
+        is_previously_flagged: context.is_previously_flagged,
+      });
+    } catch (ctxErr: any) {
+      console.warn("[StreamChunk:ContextError]", ctxErr.message);
+    }
+  }
+
   try {
     const result = await daemonManager.request("stream-chunk", {
       pcm_bytes_b64,
@@ -707,7 +804,7 @@ const handleStreamChunk = async (req: express.Request, res: express.Response) =>
       file,
       speaker_id,
       threshold,
-      context,
+      context: enrichedContext || context,
       window_index: window_index || 0,
       call_id,
     });
@@ -751,6 +848,7 @@ function setupLiveStreamingWebSocket(server: http.Server) {
     let speakerId: string | undefined = undefined;
     let threshold: number | undefined = undefined;
     let callContext: Record<string, any> = {};
+    let enrichedContextCache: EnrichedCallContext | null = null;
 
     const evaluateWindow = async () => {
       if (isAnalyzing || rollingBuffer.length < windowSizeBytes) {
@@ -776,7 +874,7 @@ function setupLiveStreamingWebSocket(server: http.Server) {
           window_index: windowIndex,
           speaker_id: speakerId,
           threshold: threshold,
-          context: callContext,
+          context: enrichedContextCache || callContext,
           call_id: sessionId,
         });
 
@@ -802,12 +900,20 @@ function setupLiveStreamingWebSocket(server: http.Server) {
                 flags: result.data.flags,
                 prosody_reasons: result.data.prosody_reasons || [],
                 prosody_metrics: result.data.prosody_metrics || {},
+                context_intelligence: result.data.context_intelligence,
                 deepfake_detection: result.data.deepfake_detection,
                 speaker_verification: result.data.speaker_verification,
                 audio_metrics: result.data.audio_metrics,
                 timestamp: Date.now(),
               })
             );
+
+            // Record threat intelligence if window has critical risk
+            if (enrichedContextCache && result.data.risk_score >= 70) {
+              contextService
+                .recordThreatIntelligenceIfHighRisk(sessionId, result.data, enrichedContextCache)
+                .catch((e) => console.warn("[WebSocket:ThreatIntelligenceError]", e.message));
+            }
           } else {
             ws.send(
               JSON.stringify({
@@ -851,14 +957,38 @@ function setupLiveStreamingWebSocket(server: http.Server) {
           const text = data.toString("utf-8");
           const msg = JSON.parse(text);
 
-          if (msg.type === "config" || msg.type === "start") {
+          if (msg.type === "config" || msg.type === "start" || msg.type === "start_stream") {
             if (msg.window_duration_sec && typeof msg.window_duration_sec === "number") {
               windowDurationSec = Math.max(0.8, Math.min(3.0, msg.window_duration_sec));
               windowSizeBytes = Math.round(windowDurationSec * 16000 * 2);
             }
             if (msg.speaker_id) speakerId = String(msg.speaker_id);
             if (msg.threshold !== undefined) threshold = parseFloat(msg.threshold);
-            if (msg.context && typeof msg.context === "object") callContext = msg.context;
+            if (msg.context && typeof msg.context === "object") {
+              callContext = msg.context;
+            }
+
+            // Enrich context outside the hot audio streaming loop
+            try {
+              enrichedContextCache = await contextService.retrieveCallContext({
+                organization_id: msg.organization_id || callContext.organization_id,
+                caller_id: msg.caller_id || callContext.caller_id,
+                contact_id: msg.contact_id || callContext.contact_id,
+                speaker_id: speakerId,
+                claimed_role: msg.claimed_role || callContext.claimed_role,
+                requested_amount: msg.requested_transaction_amount || callContext.requested_transaction_amount || msg.requested_amount || callContext.requested_amount,
+                normal_amount: msg.normal_transaction_amount || callContext.normal_transaction_amount || msg.normal_amount || callContext.normal_amount,
+                transaction_reference: msg.transaction_reference || callContext.transaction_reference,
+                is_urgent: msg.is_urgent ?? callContext.is_urgent,
+                urgency_reason: msg.urgency_reason || callContext.urgency_reason,
+                transcript_text: msg.transcript_text || callContext.transcript_text,
+                suspicious_keywords_found: msg.suspicious_keywords_found || callContext.suspicious_keywords_found,
+                is_caller_recognized: msg.is_caller_recognized ?? callContext.is_caller_recognized,
+                is_previously_flagged: msg.is_previously_flagged ?? callContext.is_previously_flagged,
+              });
+            } catch (err: any) {
+              console.warn("[WebSocket:ContextEnrichError]", err.message);
+            }
 
             ws.send(
               JSON.stringify({
@@ -868,8 +998,85 @@ function setupLiveStreamingWebSocket(server: http.Server) {
                 window_size_bytes: windowSizeBytes,
                 sample_rate: 16000,
                 speaker_id: speakerId || null,
+                context_summary: enrichedContextCache
+                  ? {
+                      contact_id: enrichedContextCache.contact_id,
+                      contact_name: enrichedContextCache.contact_name,
+                      contact_role: enrichedContextCache.contact_role,
+                      is_caller_recognized: enrichedContextCache.is_caller_recognized,
+                      is_previously_flagged: enrichedContextCache.is_previously_flagged,
+                      role_mismatch: enrichedContextCache.role_mismatch,
+                      context_source: enrichedContextCache.context_source,
+                      policy_thresholds: {
+                        fake_prob_critical: enrichedContextCache.policy.fake_prob_critical_threshold,
+                        fake_prob_warn: enrichedContextCache.policy.fake_prob_warn_threshold,
+                        auto_hold_amount: enrichedContextCache.policy.transaction_auto_hold_amount,
+                      },
+                    }
+                  : null,
               })
             );
+          } else if (msg.type === "update_context" && (msg.context || msg.payload)) {
+            // SECURITY HARDENING: Do not allow client update_context to replace protected fields
+            // (organization_id, is_verified, is_caller_recognized, is_previously_flagged, contact_role,
+            // fraud_history_count, has_prior_fraud_history, recent_fraud_types, transaction_auto_hold_amount, policy, role_mismatch)
+            const updates = (msg.context || msg.payload) as Record<string, any>;
+
+            // Allow only legitimate call-intent fields:
+            if (updates.claimed_role !== undefined) {
+              callContext.claimed_role = updates.claimed_role ? String(updates.claimed_role) : null;
+            }
+            if (updates.requested_transaction_amount !== undefined) {
+              callContext.requested_transaction_amount = typeof updates.requested_transaction_amount === "number" ? updates.requested_transaction_amount : parseFloat(updates.requested_transaction_amount);
+            } else if (updates.requested_amount !== undefined) {
+              callContext.requested_transaction_amount = typeof updates.requested_amount === "number" ? updates.requested_amount : parseFloat(updates.requested_amount);
+            }
+            if (updates.normal_transaction_amount !== undefined) {
+              callContext.normal_transaction_amount = typeof updates.normal_transaction_amount === "number" ? updates.normal_transaction_amount : parseFloat(updates.normal_transaction_amount);
+            } else if (updates.normal_amount !== undefined) {
+              callContext.normal_transaction_amount = typeof updates.normal_amount === "number" ? updates.normal_amount : parseFloat(updates.normal_amount);
+            }
+            if (updates.transaction_reference !== undefined) {
+              callContext.transaction_reference = updates.transaction_reference ? String(updates.transaction_reference) : null;
+            }
+            if (updates.is_urgent !== undefined) {
+              callContext.is_urgent = String(updates.is_urgent).toLowerCase() === "true" || updates.is_urgent === true;
+            }
+            if (updates.urgency_reason !== undefined) {
+              callContext.urgency_reason = updates.urgency_reason ? String(updates.urgency_reason) : null;
+            }
+            if (updates.transcript_text !== undefined) {
+              callContext.transcript_text = updates.transcript_text ? String(updates.transcript_text) : null;
+            }
+            if (updates.suspicious_keywords_found !== undefined && Array.isArray(updates.suspicious_keywords_found)) {
+              callContext.suspicious_keywords_found = updates.suspicious_keywords_found;
+            }
+
+            try {
+              // Re-enrich using authoritative server service
+              enrichedContextCache = await contextService.retrieveCallContext({
+                caller_id: callContext.caller_id,
+                contact_id: callContext.contact_id,
+                speaker_id: speakerId,
+                claimed_role: callContext.claimed_role,
+                requested_amount: callContext.requested_transaction_amount,
+                normal_amount: callContext.normal_transaction_amount,
+                transaction_reference: callContext.transaction_reference,
+                is_urgent: callContext.is_urgent,
+                urgency_reason: callContext.urgency_reason,
+                transcript_text: callContext.transcript_text,
+                suspicious_keywords_found: callContext.suspicious_keywords_found,
+              });
+              ws.send(
+                JSON.stringify({
+                  type: "context_updated",
+                  session_id: sessionId,
+                  context_summary: enrichedContextCache,
+                })
+              );
+            } catch (err: any) {
+              console.warn("[WebSocket:UpdateContextError]", err.message);
+            }
           } else if (msg.type === "audio_chunk" && msg.data) {
             const chunkBuf = Buffer.from(msg.data, "base64");
             rollingBuffer = Buffer.concat([rollingBuffer, chunkBuf]);
