@@ -116,9 +116,13 @@ export class MicrophoneStreamer {
             const msg = JSON.parse(event.data);
             if (msg.type === "analysis_result") {
               this.config.onResult(msg as LiveStreamAnalysisResult);
+            } else if (msg.type === "session_warming_up") {
+              this.config.onStatusChange("connecting", msg.message || "Local AI models warming up in memory...");
+            } else if (msg.type === "session_ready") {
+              this.config.onStatusChange("listening", "Microphone stream active. Analyzing live speech windows in real-time.");
             } else if (msg.type === "analysis_error") {
               console.warn("[MicrophoneStreamer:BackendError]", msg.error);
-            } else if (msg.type === "pong" || msg.type === "connected" || msg.type === "session_ready") {
+            } else if (msg.type === "pong" || msg.type === "connected") {
               // Heartbeat/handshake ack
             }
           }

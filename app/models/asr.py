@@ -49,6 +49,16 @@ MULTILINGUAL_FRAUD_KEYWORDS: Dict[str, List[str]] = {
         "pin code",
         "auth code",
         "2fa",
+        "passcode",
+        "password",
+        "share otp",
+        "give otp",
+        "tell me otp",
+        "send otp",
+        "enter otp",
+        "sms code",
+        "login code",
+        "pin number",
         # Hindi / Hinglish
         "ओटीपी",
         "ओ टी पी",
@@ -58,33 +68,41 @@ MULTILINGUAL_FRAUD_KEYWORDS: Dict[str, List[str]] = {
         "otp batao",
         "otp dijiye",
         "otp share",
+        "otp bhej",
+        "otp de",
         # Telugu
         "ఓటీపీ",
         "ఓటిపి",
         "పిన్",
         "పాస్‌వర్డ్",
         "otp cheppandi",
+        "otp pampandi",
         # Tamil
         "ஓடிபி",
         "கடவுச்சொல்",
         "சரிபார்ப்பு குறியீடு",
         "otp sollunga",
+        "otp anuppunga",
         # Kannada
         "ಒಟಿಪಿ",
         "ಪಿನ್",
         "otp heli",
+        "otp kalisi",
         # Malayalam
         "ഒടിപി",
         "പിൻ",
         "otp parayoo",
+        "otp ayakkuka",
         # Bengali
         "ওটিপি",
         "পিন",
         "otp bolun",
+        "otp pathan",
         # Marathi
         "ओटीपी",
         "पिन",
         "otp sanga",
+        "otp pathva",
     ],
     # 2. Urgent Financial Transfer & Wire Requests
     "URGENT_TRANSFER": [
@@ -94,12 +112,31 @@ MULTILINGUAL_FRAUD_KEYWORDS: Dict[str, List[str]] = {
         "send funds",
         "send money",
         "transfer immediately",
+        "transfer money",
+        "transfer funds",
+        "transfer now",
+        "urgent transfer",
+        "wire money",
+        "wire the money",
+        "wire the funds",
         "bank transfer",
         "rtgs",
         "neft",
         "imps",
         "emergency payment",
         "emergency transfer",
+        "immediate payment",
+        "pay immediately",
+        "pay now",
+        "send cash",
+        "authorize payment",
+        "authorize transfer",
+        "authorize now",
+        "crypto transfer",
+        "gift card",
+        "crypto payment",
+        "account details",
+        "unauthorized transaction",
         # Hindi / Hinglish
         "तुरंत पैसे",
         "पैसे भेजो",
@@ -108,11 +145,16 @@ MULTILINGUAL_FRAUD_KEYWORDS: Dict[str, List[str]] = {
         "turant bhejo",
         "paise transfer",
         "turant transfer",
+        "paise bhejo",
+        "paisa bhejo",
+        "khata sankhya",
+        "emergency payment",
         # Telugu
         "డబ్బు పంపండి",
         "తక్షణ బదిలీ",
         "ventane pampandi",
         "dabbu pampandi",
+        "khata vivaralu",
         # Tamil
         "உடனடி",
         "பணம்",
@@ -130,6 +172,7 @@ MULTILINGUAL_FRAUD_KEYWORDS: Dict[str, List[str]] = {
         "ಹಣ ಕಳುಹಿಸಿ",
         "tara bandisi",
         "hana kalisi",
+        "khatheya vivara",
         # Malayalam
         "ഉടൻ",
         "പണം",
@@ -165,6 +208,16 @@ MULTILINGUAL_FRAUD_KEYWORDS: Dict[str, List[str]] = {
         "kyc expired",
         "card blocked",
         "arrest warrant",
+        "digital arrest",
+        "court order",
+        "income tax",
+        "customs department",
+        "law enforcement",
+        "penalty",
+        "block account",
+        "suspend account",
+        "threat",
+        "investigation",
         # Hindi / Hinglish
         "खाता ब्लॉक",
         "खाता बंद",
@@ -174,6 +227,7 @@ MULTILINGUAL_FRAUD_KEYWORDS: Dict[str, List[str]] = {
         "khata block",
         "police case",
         "kyc update",
+        "digital arrest",
         # Telugu
         "ఖాతా బ్లాక్",
         "కేవైసీ",
@@ -198,10 +252,18 @@ MULTILINGUAL_FRAUD_KEYWORDS: Dict[str, List[str]] = {
     # 4. Credential / Secret Coercion
     "CONFIDENTIAL_BYPASS": [
         "do not tell anyone",
+        "dont tell anyone",
         "keep this confidential",
         "keep this secret",
+        "keep confidential",
+        "keep secret",
         "bypass protocol",
         "bypass procedure",
+        "dont tell anybody",
+        "do not inform",
+        "strictly confidential",
+        "no one should know",
+        "skip verification",
         # Hindi
         "kisi ko mat batana",
         "gupt rakho",
@@ -310,7 +372,9 @@ class SpeechRecognizer:
         if not text or not text.strip():
             return [], []
 
-        clean_text = text.lower().strip()
+        # Normalize text: strip punctuation and lowercase
+        normalized_text = re.sub(r"[^\w\s\u0900-\u0D7F]", " ", text.lower())
+        clean_text = " ".join(normalized_text.split())
         matched_keywords: List[str] = []
         context_flags: List[str] = []
 

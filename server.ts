@@ -188,6 +188,14 @@ class PythonInferenceDaemonManager {
     this.pendingRequests.clear();
   }
 
+  public get isDaemonReady(): boolean {
+    return this.isReady;
+  }
+
+  public waitUntilReady(): Promise<void> {
+    return this.ensureStarted();
+  }
+
   public async request(command: string, args: Record<string, any> = {}): Promise<{ status: number; data: any }> {
     try {
       await this.ensureStarted();
@@ -1950,6 +1958,34 @@ app.post("/api/admin/retention/purge", apiAuthMiddleware, async (req: express.Re
 // ----------------------------------------------------
 // WEBSOCKET LIVE STREAMING ENDPOINT (/ws/live-stream)
 // ----------------------------------------------------
+function appendToRollingTranscript(existing: string, newSnippet: string): string {
+  const cleanSnippet = newSnippet.trim();
+  if (!cleanSnippet) return existing;
+  if (!existing) return cleanSnippet;
+
+  const existingLower = existing.toLowerCase().trim();
+  const snippetLower = cleanSnippet.toLowerCase();
+
+  if (existingLower.endsWith(snippetLower) || existingLower.includes(snippetLower)) {
+    return existing;
+  }
+
+  const existingWords = existing.split(/\s+/);
+  const snippetWords = cleanSnippet.split(/\s+/);
+
+  const maxOverlap = Math.min(existingWords.length, snippetWords.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap--) {
+    const endSlice = existingWords.slice(existingWords.length - overlap).join(" ").toLowerCase();
+    const startSlice = snippetWords.slice(0, overlap).join(" ").toLowerCase();
+    if (endSlice === startSlice) {
+      const remainder = snippetWords.slice(overlap).join(" ");
+      return remainder ? `${existing} ${remainder}` : existing;
+    }
+  }
+
+  return `${existing} ${cleanSnippet}`;
+}
+
 function setupLiveStreamingWebSocket(server: http.Server) {
   const wss = new WebSocketServer({ server, path: "/ws/live-stream" });
 
@@ -1977,6 +2013,23 @@ function setupLiveStreamingWebSocket(server: http.Server) {
     let callContext: Record<string, any> = {};
     let enrichedContextCache: EnrichedCallContext | null = null;
 
+    // Cross-window persistent session accumulator
+    let sessionTranscript = "";
+    let sessionDetectedKeywords: Set<string> = new Set();
+    let sessionSpeechContextFlags: Set<string> = new Set();
+    let sessionMaxRisk = 0;
+
+    // Notify client of warmup state if daemon is still loading
+    if (!daemonManager.isDaemonReady) {
+      ws.send(
+        JSON.stringify({
+          type: "session_warming_up",
+          session_id: sessionId,
+          message: "Local neural models are warming up in memory...",
+        })
+      );
+    }
+
     const evaluateWindow = async () => {
       if (isAnalyzing || rollingBuffer.length < windowSizeBytes) {
         return;
@@ -1996,12 +2049,19 @@ function setupLiveStreamingWebSocket(server: http.Server) {
 
       const startTime = performance.now();
       try {
+        // Prepare merged context with accumulated session speech
+        const mergedContext = {
+          ...(enrichedContextCache || callContext),
+          transcript_text: sessionTranscript || undefined,
+          suspicious_keywords_found: Array.from(sessionDetectedKeywords),
+        };
+
         const result = await daemonManager.request("stream-chunk", {
           pcm_bytes_b64: base64Chunk,
           window_index: windowIndex,
           speaker_id: speakerId,
           threshold: threshold,
-          context: enrichedContextCache || callContext,
+          context: mergedContext,
           call_id: sessionId,
         });
 
@@ -2009,6 +2069,38 @@ function setupLiveStreamingWebSocket(server: http.Server) {
 
         if (ws.readyState === WebSocket.OPEN) {
           if (result.status === 200 && result.data) {
+            const winTranscript = (result.data.transcript || "").trim();
+            if (winTranscript && result.data.asr_analysis?.is_speech) {
+              sessionTranscript = appendToRollingTranscript(sessionTranscript, winTranscript);
+            }
+
+            if (result.data.speech_context_flags && Array.isArray(result.data.speech_context_flags)) {
+              result.data.speech_context_flags.forEach((f: string) => sessionSpeechContextFlags.add(f));
+            }
+            if (result.data.asr_analysis?.keywords_detected && Array.isArray(result.data.asr_analysis.keywords_detected)) {
+              result.data.asr_analysis.keywords_detected.forEach((kw: string) => sessionDetectedKeywords.add(kw));
+            }
+
+            const winRisk = Number(result.data.risk_score) || 0;
+            if (winRisk > sessionMaxRisk) {
+              sessionMaxRisk = winRisk;
+            }
+
+            // Keep enriched context cache updated with accumulated speech indicators
+            if (enrichedContextCache) {
+              enrichedContextCache.transcript_text = sessionTranscript;
+              enrichedContextCache.suspicious_keywords_found = Array.from(sessionDetectedKeywords);
+            }
+
+            const effectiveFlags = Array.from(
+              new Set([
+                ...(result.data.flags || []),
+                ...(sessionSpeechContextFlags.size > 0
+                  ? Array.from(sessionSpeechContextFlags).map((f) => `Speech indicator: ${f.replace("SPEECH_", "")}`)
+                  : []),
+              ])
+            );
+
             ws.send(
               JSON.stringify({
                 type: "analysis_result",
@@ -2022,9 +2114,10 @@ function setupLiveStreamingWebSocket(server: http.Server) {
                 real_probability: result.data.real_probability,
                 acoustic_anomaly: result.data.acoustic_anomaly,
                 risk_score: result.data.risk_score,
+                session_max_risk_score: sessionMaxRisk,
                 risk_level: result.data.risk_level,
                 recommended_action: result.data.recommended_action,
-                flags: result.data.flags,
+                flags: effectiveFlags,
                 prosody_reasons: result.data.prosody_reasons || [],
                 prosody_metrics: result.data.prosody_metrics || {},
                 context_intelligence: result.data.context_intelligence,
@@ -2036,9 +2129,16 @@ function setupLiveStreamingWebSocket(server: http.Server) {
                 language: result.data.language,
                 language_name: result.data.language_name,
                 language_confidence: result.data.language_confidence,
-                transcript: result.data.transcript,
-                speech_context_flags: result.data.speech_context_flags || [],
-                asr_analysis: result.data.asr_analysis,
+                window_transcript: winTranscript,
+                transcript: sessionTranscript || winTranscript,
+                speech_context_flags: Array.from(sessionSpeechContextFlags),
+                keywords_detected: Array.from(sessionDetectedKeywords),
+                asr_analysis: {
+                  ...(result.data.asr_analysis || {}),
+                  transcript: sessionTranscript || winTranscript,
+                  keywords_detected: Array.from(sessionDetectedKeywords),
+                  speech_context_flags: Array.from(sessionSpeechContextFlags),
+                },
                 verification_session: result.data.verification_session,
                 timestamp: Date.now(),
               })

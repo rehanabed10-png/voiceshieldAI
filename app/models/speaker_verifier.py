@@ -685,6 +685,60 @@ class DatabaseSpeakerStore:
             rows = cur.fetchall()
             return [r["speaker_id"] for r in rows]
 
+    @property
+    def _store(self) -> Dict[str, SpeakerEmbedding]:
+        """Provides dictionary-like view for backward compatibility."""
+        res = {}
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT speaker_id, organization_id, speaker_name, embedding_json, sample_count, created_at, updated_at, metadata_json FROM speaker_embeddings ORDER BY created_at DESC")
+            rows = cur.fetchall()
+            for r in rows:
+                emb_list = self.json.loads(r["embedding_json"])
+                meta = self.json.loads(r["metadata_json"]) if r["metadata_json"] else {}
+                if r["speaker_name"] and not meta.get("speaker_name"):
+                    meta["speaker_name"] = r["speaker_name"]
+                meta["organization_id"] = r["organization_id"]
+                res[r["speaker_id"]] = SpeakerEmbedding(
+                    speaker_id=r["speaker_id"],
+                    embedding=emb_list,
+                    created_at=float(r["created_at"]),
+                    updated_at=float(r["updated_at"]),
+                    sample_count=int(r["sample_count"]),
+                    metadata=meta,
+                )
+        return res
+
+    def get_all(self, organization_id: Optional[str] = None) -> List[SpeakerEmbedding]:
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            if organization_id:
+                cur.execute(
+                    "SELECT speaker_id, organization_id, speaker_name, embedding_json, sample_count, created_at, updated_at, metadata_json FROM speaker_embeddings WHERE organization_id = ? ORDER BY created_at DESC",
+                    (organization_id,),
+                )
+            else:
+                cur.execute("SELECT speaker_id, organization_id, speaker_name, embedding_json, sample_count, created_at, updated_at, metadata_json FROM speaker_embeddings ORDER BY created_at DESC")
+            rows = cur.fetchall()
+            results = []
+            for r in rows:
+                emb_list = self.json.loads(r["embedding_json"])
+                meta = self.json.loads(r["metadata_json"]) if r["metadata_json"] else {}
+                if r["speaker_name"] and not meta.get("speaker_name"):
+                    meta["speaker_name"] = r["speaker_name"]
+                meta["organization_id"] = r["organization_id"]
+                results.append(
+                    SpeakerEmbedding(
+                        speaker_id=r["speaker_id"],
+                        embedding=emb_list,
+                        created_at=float(r["created_at"]),
+                        updated_at=float(r["updated_at"]),
+                        sample_count=int(r["sample_count"]),
+                        metadata=meta,
+                    )
+                )
+            return results
+
     def clear(self) -> None:
         with self._get_connection() as conn:
             conn.execute("DELETE FROM speaker_embeddings")

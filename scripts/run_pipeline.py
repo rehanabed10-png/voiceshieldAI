@@ -396,7 +396,7 @@ class PipelineWorker:
 
             # Warmup SpeechRecognizer (Whisper-Tiny)
             if hasattr(self, "speech_recognizer") and self.speech_recognizer is not None:
-                self.speech_recognizer.transcribe(warmup_audio, max_new_tokens=4)
+                self.speech_recognizer.transcribe(warmup_audio, max_new_tokens=16)
 
             warmup_ms = (time.perf_counter() - t0) * 1000.0
             sys.stderr.write(f"[PipelineWorker] One-time model warmup (Wav2Vec2 + ECAPA + Whisper) completed in {warmup_ms:.1f}ms.\n")
