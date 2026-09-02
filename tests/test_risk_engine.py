@@ -222,6 +222,33 @@ class TestRiskEngine(unittest.TestCase):
         self.assertEqual(result.recommended_action, "SECONDARY_VERIFICATION")
         self.assertTrue(any("Chief Financial Officer" in f for f in result.flags))
 
+    def test_regression_sih_linear_formula_and_tier_invariants(self):
+        """
+        Regression Test: Ensure multi-signal risk fusion strictly adheres to the linear
+        formula RiskScore = (0.5*100*P_fake) + (0.3*100*M) + (0.1*50*A) + (0.1*50*C)
+        and canonical 3-tier classification (LOW <= 39, MEDIUM 40-69, HIGH >= 70).
+        """
+        cases = [
+            # (P_fake, M, A, C, expected_score, expected_tier)
+            (0.0, 0, 0.0, 0.0, 0, "LOW"),
+            (0.78, 0, 0.0, 0.0, 39, "LOW"),      # 0.5*100*0.78 = 39 -> LOW
+            (0.80, 0, 0.0, 0.0, 40, "MEDIUM"),   # 0.5*100*0.80 = 40 -> MEDIUM
+            (0.90, 0, 0.0, 0.0, 45, "MEDIUM"),   # 0.5*100*0.90 = 45 -> MEDIUM
+            (0.0, 1, 0.0, 0.0, 30, "LOW"),       # 0.3*100*1 = 30 -> LOW
+            (0.60, 1, 0.0, 0.0, 60, "MEDIUM"),   # 30 + 30 = 60 -> MEDIUM
+            (0.80, 1, 0.0, 0.0, 70, "HIGH"),     # 40 + 30 = 70 -> HIGH
+            (0.80, 1, 0.0, 1.0, 75, "HIGH"),     # 40 + 30 + 0 + 5 = 75 -> HIGH
+            (0.95, 1, 0.8, 1.0, 86, "HIGH"),     # 47.5 + 30 + 4 + 5 = 86.5 -> 86 -> HIGH
+            (1.0, 1, 1.0, 1.0, 90, "HIGH"),      # 50 + 30 + 5 + 5 = 90 -> HIGH
+        ]
+
+        for p_fake, m, a, c, exp_score, exp_tier in cases:
+            signals = RiskSignals(fake_probability=p_fake, speaker_mismatch=m, acoustic_anomaly=a, context_flag=c)
+            res = self.engine.evaluate_signals(signals)
+            self.assertEqual(res.risk_score, exp_score, f"Mismatch for inputs ({p_fake}, {m}, {a}, {c})")
+            self.assertEqual(res.risk_level, exp_tier, f"Tier mismatch for inputs ({p_fake}, {m}, {a}, {c})")
+
 
 if __name__ == "__main__":
     unittest.main()
+

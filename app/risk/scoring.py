@@ -130,14 +130,6 @@ class VoiceShieldRiskEngine:
             + (self.config.w_context * self.config.scale_context * c_context)
         )
 
-        # Non-linear threat escalation when synthetic voice probability is elevated
-        # If deepfake confidence is high (P_fake >= 0.65), composite risk must not be suppressed
-        # into 'LOW' simply because a speaker profile or transaction context is not yet linked.
-        if p_fake >= 0.70:
-            raw_score = max(raw_score, p_fake * 100.0)
-        elif p_fake >= 0.50:
-            raw_score = max(raw_score, 45.0 + (p_fake - 0.50) * 75.0)
-
         # Strictly clamp final score to 0 - 100
         clamped_score = max(0.0, min(100.0, raw_score))
         return clamped_score
@@ -196,14 +188,6 @@ class VoiceShieldRiskEngine:
         acoustic_sens_thresh = policy_context.acoustic_anomaly_sensitivity if policy_context else self.config.acoustic_anomaly_flag_threshold
         auto_block_crit = policy_context.auto_block_on_critical_deepfake if policy_context else False
         step_up_required = policy_context.step_up_verification_required if policy_context else True
-
-        # If fake probability is elevated, ensure risk level reflects synthetic clone threat
-        if signals.fake_probability >= fake_crit_thresh:
-            risk_level = "CRITICAL"
-        elif signals.fake_probability >= 0.65 and risk_level == "LOW":
-            risk_level = "HIGH"
-        elif signals.fake_probability >= 0.50 and risk_level == "LOW":
-            risk_level = "MEDIUM"
 
         # Collect explainable diagnostic flags
         flags: List[str] = []
