@@ -16,7 +16,7 @@ import {
   ExternalLink
 } from "lucide-react";
 
-export type NavTab = "live" | "analysis" | "speakers" | "events" | "policy";
+export type NavTab = "live" | "analysis" | "speakers" | "policy";
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -24,13 +24,15 @@ interface SidebarProps {
   enrolledCount: number;
   threatCount?: number;
   isStreaming?: boolean;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onTabChange,
   enrolledCount,
-  threatCount = 3,
+  threatCount = 0,
   isStreaming = false,
 }) => {
   const navItems = [
@@ -56,14 +58,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       subtext: "192-D ECAPA profile store",
       icon: UserCheck,
       count: enrolledCount,
-    },
-    {
-      id: "events" as NavTab,
-      label: "Security Audit Logs",
-      subtext: "Historical incident telemetry",
-      icon: ShieldAlert,
-      badge: threatCount > 0 ? `${threatCount} THREATS` : undefined,
-      badgeColor: "bg-red-500/20 text-red-300 border-red-500/30",
     },
     {
       id: "policy" as NavTab,

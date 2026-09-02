@@ -396,11 +396,13 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-[11px] bg-black/40 p-2.5 rounded-lg border border-white/5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] bg-black/40 p-2.5 rounded-lg border border-white/5 font-mono">
                   <div>Cosine Similarity: <strong className="text-white">{verifyResult.similarity_score}</strong></div>
                   <div>Decision Threshold: <strong className="text-white">{verifyResult.threshold}</strong></div>
+                  <div>Centroid Samples: <strong className="text-cyan-300">{verifyResult.sample_count || 1}</strong></div>
                   <div>Mismatch Flag (M): <strong className="text-white">{verifyResult.speaker_mismatch_flag}</strong></div>
                   <div>Status: <strong className="text-white">{verifyResult.status}</strong></div>
+                  <div>Inference Time: <strong className="text-white">{verifyResult.inference_time_ms} ms</strong></div>
                 </div>
               </div>
             )}
@@ -437,7 +439,7 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
               Active Registered Speaker Profiles ({speakers.length})
             </h3>
           </div>
-          <span className="text-xs text-slate-400 font-mono">In-Memory 192-D Store</span>
+          <span className="text-xs text-slate-400 font-mono">Multi-Sample Centroid Store (192-D)</span>
         </div>
 
         {speakers.length === 0 ? (
@@ -455,8 +457,9 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
                 <tr>
                   <th className="py-2.5 px-3 font-bold">Speaker ID</th>
                   <th className="py-2.5 px-3 font-bold">Display Name</th>
-                  <th className="py-2.5 px-3 font-bold">Embedding Vector</th>
-                  <th className="py-2.5 px-3 font-bold">Enrolled At</th>
+                  <th className="py-2.5 px-3 font-bold">Genuine Samples</th>
+                  <th className="py-2.5 px-3 font-bold">Embedding Centroid</th>
+                  <th className="py-2.5 px-3 font-bold">Last Updated</th>
                   <th className="py-2.5 px-3 text-right font-bold">Action</th>
                 </tr>
               </thead>
@@ -470,12 +473,17 @@ export const SpeakerProfiles: React.FC<SpeakerProfilesProps> = ({
                     <td className="py-3 px-3 text-slate-200">
                       {s.speaker_name || "—"}
                     </td>
+                    <td className="py-3 px-3">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                        {s.sample_count || 1} {s.sample_count === 1 ? "Sample" : "Samples (Centroid)"}
+                      </span>
+                    </td>
                     <td className="py-3 px-3 text-purple-400 font-bold">
                       192-D (L2 Norm)
                     </td>
                     <td className="py-3 px-3 text-slate-400 flex items-center gap-1">
                       <Clock className="w-3 h-3 text-slate-500" />
-                      {new Date(s.created_at * 1000).toLocaleTimeString()}
+                      {new Date((s.updated_at || s.created_at) * 1000).toLocaleTimeString()}
                     </td>
                     <td className="py-3 px-3 text-right">
                       <button

@@ -25,6 +25,8 @@ export class MicrophoneStreamer {
   private socket: WebSocket | null = null;
   private isStreaming: boolean = false;
   private config: MicrophoneStreamConfig;
+  private heartbeatTimer: any = null;
+  private fileStreamTimer: any = null;
 
   constructor(config: MicrophoneStreamConfig) {
     this.config = config;
@@ -38,15 +40,19 @@ export class MicrophoneStreamer {
     }
 
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      this.socket.send(
-        JSON.stringify({
-          type: "config",
-          speaker_id: this.config.speakerId || null,
-          threshold: this.config.threshold,
-          context: this.config.context,
-          window_duration_sec: this.config.windowDurationSec || 1.5,
-        })
-      );
+      try {
+        this.socket.send(
+          JSON.stringify({
+            type: "config",
+            speaker_id: this.config.speakerId || null,
+            threshold: this.config.threshold,
+            context: this.config.context,
+            window_duration_sec: this.config.windowDurationSec || 1.5,
+          })
+        );
+      } catch (e: any) {
+        console.warn("[MicrophoneStreamer] Failed to send context update:", e.message);
+      }
     }
   }
 
@@ -55,12 +61,12 @@ export class MicrophoneStreamer {
       return;
     }
 
-    this.config.onStatusChange("connecting", "Requesting microphone permissions and connecting to real-time analysis pipeline...");
+    this.config.onStatusChange("connecting", "Connecting to live WebSocket stream (/ws/live-stream)...");
 
     try {
       // 1. Establish WebSocket Connection
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const host = window.location.host;
+      const host = window.location.host || "localhost:3000";
       const wsUrl = `${protocol}//${host}/ws/live-stream`;
 
       const ws = new WebSocket(wsUrl);
@@ -77,13 +83,13 @@ export class MicrophoneStreamer {
           resolve();
         };
 
-        ws.onerror = (err) => {
+        ws.onerror = (_err) => {
           clearTimeout(timeout);
           reject(new Error("WebSocket connection failed. Verify server is running on port 3000."));
         };
       });
 
-      // Send initial configuration
+      // Send initial configuration handshake
       ws.send(
         JSON.stringify({
           type: "start",
@@ -94,6 +100,15 @@ export class MicrophoneStreamer {
         })
       );
 
+      // Start keep-alive heartbeat ping every 10s
+      this.heartbeatTimer = setInterval(() => {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+          try {
+            this.socket.send(JSON.stringify({ type: "ping" }));
+          } catch (e) {}
+        }
+      }, 10000);
+
       // Handle incoming analysis telemetry
       ws.onmessage = (event) => {
         try {
@@ -103,6 +118,8 @@ export class MicrophoneStreamer {
               this.config.onResult(msg as LiveStreamAnalysisResult);
             } else if (msg.type === "analysis_error") {
               console.warn("[MicrophoneStreamer:BackendError]", msg.error);
+            } else if (msg.type === "pong" || msg.type === "connected" || msg.type === "session_ready") {
+              // Heartbeat/handshake ack
             }
           }
         } catch (e: any) {
@@ -117,21 +134,42 @@ export class MicrophoneStreamer {
         }
       };
 
-      // 2. Request User Microphone
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      // 2. Request User Microphone with fallback constraints
+      let stream: MediaStream;
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error("Browser mediaDevices API not available in this environment.");
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+      } catch (errPrimary: any) {
+        // Fallback to basic audio constraint
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (errFallback: any) {
+          throw new Error(
+            `Microphone access unavailable (${errFallback.message || errPrimary.message}). You can also stream test audio files directly over WebSocket.`
+          );
+        }
+      }
       this.mediaStream = stream;
 
       // 3. Audio Processing Pipeline
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) {
+        throw new Error("Web Audio API AudioContext not supported by this browser.");
+      }
       const audioCtx = new AudioCtx();
       this.audioContext = audioCtx;
+
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume();
+      }
 
       const source = audioCtx.createMediaStreamSource(stream);
       this.sourceNode = source;
@@ -200,7 +238,6 @@ export class MicrophoneStreamer {
 
       // Connect graph: Source -> Processor -> Destination (muted)
       source.connect(processor);
-      // Connect to destination to keep processor alive in Chrome/Safari, but with a gain node of 0 to avoid echo
       const muteGain = audioCtx.createGain();
       muteGain.gain.value = 0;
       processor.connect(muteGain);
@@ -215,8 +252,162 @@ export class MicrophoneStreamer {
     }
   }
 
+  /**
+   * Stream a test audio file/buffer over the WebSocket in real-time chunks (16kHz PCM16).
+   */
+  public async streamAudioFile(file: File | Blob): Promise<void> {
+    if (this.isStreaming) {
+      this.stop();
+    }
+
+    this.config.onStatusChange("connecting", "Connecting to live WebSocket stream for audio file playback...");
+
+    try {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.host || "localhost:3000";
+      const wsUrl = `${protocol}//${host}/ws/live-stream`;
+
+      const ws = new WebSocket(wsUrl);
+      this.socket = ws;
+      ws.binaryType = "arraybuffer";
+
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("WebSocket timeout")), 10000);
+        ws.onopen = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error("WebSocket connection failed."));
+        };
+      });
+
+      ws.send(
+        JSON.stringify({
+          type: "start",
+          speaker_id: this.config.speakerId || null,
+          threshold: this.config.threshold,
+          context: this.config.context,
+          window_duration_sec: this.config.windowDurationSec || 1.5,
+        })
+      );
+
+      ws.onmessage = (event) => {
+        try {
+          if (typeof event.data === "string") {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "analysis_result") {
+              this.config.onResult(msg as LiveStreamAnalysisResult);
+            }
+          }
+        } catch (e) {}
+      };
+
+      ws.onclose = (event) => {
+        if (this.isStreaming) {
+          this.config.onStatusChange("closed", `Connection closed (code ${event.code})`);
+          this.stop();
+        }
+      };
+
+      // Decode audio file into AudioBuffer
+      const arrayBuf = await file.arrayBuffer();
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioCtx();
+      this.audioContext = audioCtx;
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume();
+      }
+
+      const decodedAudio = await audioCtx.decodeAudioData(arrayBuf);
+      const inputChannelData = decodedAudio.getChannelData(0);
+      const inputSampleRate = decodedAudio.sampleRate;
+      const targetSampleRate = 16000;
+
+      // Resample to 16kHz
+      let resampled16k: Float32Array;
+      if (inputSampleRate === targetSampleRate) {
+        resampled16k = inputChannelData;
+      } else {
+        const ratio = inputSampleRate / targetSampleRate;
+        const newLength = Math.round(inputChannelData.length / ratio);
+        resampled16k = new Float32Array(newLength);
+        for (let i = 0; i < newLength; i++) {
+          const originalIndex = i * ratio;
+          const idxFloor = Math.floor(originalIndex);
+          const idxCeil = Math.min(inputChannelData.length - 1, idxFloor + 1);
+          const fraction = originalIndex - idxFloor;
+          resampled16k[i] = inputChannelData[idxFloor] * (1 - fraction) + inputChannelData[idxCeil] * fraction;
+        }
+      }
+
+      this.isStreaming = true;
+      this.config.onStatusChange("listening", "Streaming audio file chunks to WebSocket in real-time (16kHz PCM16)...");
+
+      // Stream in 100ms packets (1600 samples = 3200 bytes)
+      const packetSamples = 1600;
+      let offset = 0;
+
+      this.fileStreamTimer = setInterval(() => {
+        if (!this.isStreaming || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
+          clearInterval(this.fileStreamTimer);
+          return;
+        }
+
+        if (offset >= resampled16k.length) {
+          clearInterval(this.fileStreamTimer);
+          this.config.onStatusChange("closed", "Audio file stream finished.");
+          return;
+        }
+
+        const end = Math.min(resampled16k.length, offset + packetSamples);
+        const slice = resampled16k.subarray(offset, end);
+        offset = end;
+
+        // Compute Volume
+        let sumSq = 0;
+        let peak = 0;
+        for (let i = 0; i < slice.length; i++) {
+          const s = slice[i];
+          const abs = Math.abs(s);
+          if (abs > peak) peak = abs;
+          sumSq += s * s;
+        }
+        const rms = Math.sqrt(sumSq / slice.length);
+        const rmsDb = rms > 0.00001 ? 20 * Math.log10(rms) : -100;
+        this.config.onVolume(rmsDb, peak);
+
+        const pcm16 = new Int16Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {
+          const s = Math.max(-1.0, Math.min(1.0, slice[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+
+        try {
+          this.socket.send(pcm16.buffer);
+        } catch (e) {}
+      }, 100);
+
+    } catch (err: any) {
+      this.stop();
+      this.config.onStatusChange("error", err.message || "Failed to stream audio file.");
+      throw err;
+    }
+  }
+
   public stop(): void {
     this.isStreaming = false;
+
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+
+    if (this.fileStreamTimer) {
+      clearInterval(this.fileStreamTimer);
+      this.fileStreamTimer = null;
+    }
 
     if (this.processorNode) {
       try {
@@ -250,7 +441,7 @@ export class MicrophoneStreamer {
       try {
         if (this.socket.readyState === WebSocket.OPEN) {
           this.socket.send(JSON.stringify({ type: "stop" }));
-          this.socket.close();
+          this.socket.close(1000, "Normal Closure");
         }
       } catch (e) {}
       this.socket = null;
@@ -259,3 +450,4 @@ export class MicrophoneStreamer {
     this.config.onStatusChange("closed", "Microphone stream stopped.");
   }
 }
+

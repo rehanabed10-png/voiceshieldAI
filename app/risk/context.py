@@ -156,6 +156,9 @@ def resolve_speech_profile(
     detected_language: Optional[str] = None,
     accent_region_override: Optional[str] = None,
     transcript_text: Optional[str] = None,
+    language_confidence: Optional[float] = None,
+    transcript_language: Optional[str] = None,
+    **kwargs,
 ) -> dict:
     """
     Deterministically builds non-authoritative multilingual speech profile metadata.
@@ -212,16 +215,16 @@ def resolve_speech_profile(
         det_key = alias_map.get(str(det_name).strip().lower(), "english")
         det_meta = LANGUAGE_METADATA_REGISTRY.get(det_key, LANGUAGE_METADATA_REGISTRY["english"])
         accent_profile = accent_region_override or det_meta["accent_region"]
-        confidence = round(float(meta["confidence"]), 2)
+        confidence = round(float(language_confidence), 2) if language_confidence is not None else round(float(meta["confidence"]), 2)
         code = det_meta["code"]
     else:
         active_lang = selected_name
         det_name = selected_name
         accent_profile = accent_region_override or meta["accent_region"]
-        confidence = round(float(meta["confidence"]), 2)
+        confidence = round(float(language_confidence), 2) if language_confidence is not None else round(float(meta["confidence"]), 2)
         code = meta["code"]
 
-    transcript_lang = f"{active_lang} (Subcontinental Romanized / Vernacular)" if transcript_text else active_lang
+    transcript_lang = transcript_language or (f"{active_lang} (Subcontinental Romanized / Vernacular)" if transcript_text else active_lang)
 
     return {
         "language": active_lang,

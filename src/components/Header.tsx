@@ -37,8 +37,6 @@ export const Header: React.FC<HeaderProps> = ({
         return "Audio Payload Forensic Inspection";
       case "speakers":
         return "192-D Biometric Voiceprint Registry";
-      case "events":
-        return "Security Audit Logs & Threat Incidents";
       case "policy":
         return "Organization Anti-Fraud Policy Controls";
     }
@@ -104,15 +102,15 @@ export const Header: React.FC<HeaderProps> = ({
           Profiles ({enrolledCount})
         </button>
         <button
-          onClick={() => onTabChange("events")}
+          onClick={() => onTabChange("policy")}
           className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-all ${
-            activeTab === "events"
+            activeTab === "policy"
               ? "bg-blue-600 text-white shadow-sm"
               : "text-slate-400 hover:text-white"
           }`}
         >
-          <ShieldAlert className="w-3.5 h-3.5" />
-          Logs
+          <Sliders className="w-3.5 h-3.5" />
+          Policy
         </button>
       </nav>
 
@@ -166,13 +164,6 @@ export const Header: React.FC<HeaderProps> = ({
             title="Speaker Profiles"
           >
             <UserCheck className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => onTabChange("events")}
-            className={`p-1.5 rounded ${activeTab === "events" ? "bg-blue-600 text-white" : "text-slate-400"}`}
-            title="Security Logs"
-          >
-            <ShieldAlert className="w-4 h-4" />
           </button>
           <button
             onClick={() => onTabChange("policy")}

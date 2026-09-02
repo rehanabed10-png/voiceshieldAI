@@ -35,23 +35,68 @@ class SpeakerVerifierConfig:
 @dataclass
 class SpeakerEmbedding:
     """
-    Vector embedding representation of an enrolled speaker.
+    Centroid vector embedding representation of an enrolled speaker supporting multi-sample cross-session updates.
     Raw audio is discarded after extraction for privacy and GDPR/compliance compatibility.
     """
     speaker_id: str
-    embedding: List[float]               # L2-normalized float vector
+    embedding: List[float]               # L2-normalized centroid float vector
     created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+    sample_count: int = 1                # Total number of genuine samples contributing to this centroid
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def dimension(self) -> int:
         return len(self.embedding)
 
+    def add_sample(
+        self,
+        new_embedding: List[float],
+        sample_metadata: Optional[Dict[str, Any]] = None,
+    ) -> "SpeakerEmbedding":
+        """
+        Incrementally updates the centroid embedding with a new genuine voice sample.
+        Formula:
+            c_new = (c_old * N + e_new) / (N + 1)
+        followed by L2 normalization:
+            c_norm = c_new / ||c_new||_2
+        where N = previous genuine sample count.
+        """
+        if not new_embedding or len(new_embedding) != len(self.embedding):
+            raise ValueError(
+                f"Embedding dimension mismatch: expected {len(self.embedding)}, got {len(new_embedding) if new_embedding else 0}"
+            )
+
+        N = max(1, self.sample_count)
+        # Compute incremental centroid
+        updated_centroid = [
+            (self.embedding[i] * float(N) + new_embedding[i]) / float(N + 1)
+            for i in range(len(self.embedding))
+        ]
+        # L2-normalize the updated centroid
+        self.embedding = normalize_l2(updated_centroid)
+        self.sample_count = N + 1
+        self.updated_at = time.time()
+
+        # Append enrollment record to history (metadata only, no raw audio)
+        if "history" not in self.metadata or not isinstance(self.metadata["history"], list):
+            self.metadata["history"] = []
+
+        entry: Dict[str, Any] = {
+            "sample_index": self.sample_count,
+            "enrolled_at": self.updated_at,
+        }
+        if sample_metadata:
+            entry.update(sample_metadata)
+        self.metadata["history"].append(entry)
+
+        return self
+
 
 @dataclass
 class VerificationResult:
     """
-    Standardized result of a speaker verification comparison.
+    Standardized result of a speaker verification comparison against a single or multi-sample centroid.
     """
     speaker_id: str
     similarity_score: float              # Cosine similarity in range [-1.0, 1.0]
@@ -59,6 +104,7 @@ class VerificationResult:
     is_match: bool                       # True if similarity_score >= threshold
     speaker_mismatch_flag: int           # 0 if match, 1 if mismatch (for Phase 3 risk engine)
     inference_time_ms: float
+    sample_count: int = 1                # Number of genuine samples in enrolled centroid
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -68,6 +114,7 @@ class VerificationResult:
             "threshold": round(self.threshold, 4),
             "match": self.is_match,
             "speaker_mismatch_flag": self.speaker_mismatch_flag,
+            "sample_count": self.sample_count,
             "inference_time_ms": round(self.inference_time_ms, 2),
             "metadata": self.metadata,
         }
@@ -292,10 +339,12 @@ class PretrainedECAPASpeakerVerifier(BaseSpeakerVerifier):
             threshold=target_threshold,
             is_match=is_match,
             speaker_mismatch_flag=speaker_mismatch_flag,
+            sample_count=enrolled_embedding.sample_count,
             inference_time_ms=inference_time_ms,
             metadata={
                 "model_id": self.config.model_name_or_path,
                 "device": self.device,
+                "sample_count": enrolled_embedding.sample_count,
                 "query_duration_sec": audio.processed_duration_sec,
                 "threshold_calibration_note": "Threshold is configurable; production deployment requires dataset calibration.",
             },
@@ -305,14 +354,58 @@ class PretrainedECAPASpeakerVerifier(BaseSpeakerVerifier):
 class InMemorySpeakerStore:
     """
     Thread-safe in-memory store for enrolled speaker embeddings.
-    Raw audio files are never stored, ensuring privacy preservation.
+    Supports multi-sample incremental centroid averaging across historical sessions.
+    Raw audio files are never stored, ensuring strict privacy preservation.
     """
 
     def __init__(self):
         self._store: Dict[str, SpeakerEmbedding] = {}
 
     def save(self, embedding: SpeakerEmbedding) -> None:
+        """Saves or replaces a speaker embedding object directly."""
         self._store[embedding.speaker_id] = embedding
+
+    def enroll_sample(
+        self,
+        speaker_id: str,
+        embedding: List[float],
+        speaker_name: Optional[str] = None,
+        sample_metadata: Optional[Dict[str, Any]] = None,
+    ) -> SpeakerEmbedding:
+        """
+        Enrolls a genuine voice sample for the given speaker_id.
+        - If speaker exists: updates the centroid embedding incrementally using moving average:
+            centroid_new = (centroid_old * N + e_new) / (N + 1)
+          and increments sample_count.
+        - If speaker is new: initializes a new SpeakerEmbedding with sample_count = 1.
+        """
+        existing = self._store.get(speaker_id)
+        if existing is not None:
+            if speaker_name and not existing.metadata.get("speaker_name"):
+                existing.metadata["speaker_name"] = speaker_name
+            existing.add_sample(embedding, sample_metadata)
+            return existing
+        else:
+            meta = dict(sample_metadata or {})
+            if speaker_name:
+                meta["speaker_name"] = speaker_name
+            meta["history"] = [
+                {
+                    "sample_index": 1,
+                    "enrolled_at": time.time(),
+                    **(sample_metadata or {}),
+                }
+            ]
+            new_profile = SpeakerEmbedding(
+                speaker_id=speaker_id,
+                embedding=normalize_l2(embedding),
+                created_at=time.time(),
+                updated_at=time.time(),
+                sample_count=1,
+                metadata=meta,
+            )
+            self._store[speaker_id] = new_profile
+            return new_profile
 
     def get(self, speaker_id: str) -> Optional[SpeakerEmbedding]:
         return self._store.get(speaker_id)
@@ -331,3 +424,269 @@ class InMemorySpeakerStore:
 
     def clear(self) -> None:
         self._store.clear()
+
+
+class DatabaseSpeakerStore:
+    """
+    Production-grade SQLite database-backed store for enrolled speaker centroids.
+    Guarantees persistence of 192-D biometric vectors across daemon and server restarts
+    with thread safety, ACID compliance, and multi-tenant organization scoping.
+    Zero raw audio waveforms are stored.
+    """
+
+    DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001"
+
+    def __init__(self, db_path: Optional[str] = None):
+        from contextlib import contextmanager
+        import json
+        import os
+        import sqlite3
+
+        self.contextmanager = contextmanager
+        self.json = json
+        self.sqlite3 = sqlite3
+        self.os = os
+
+        if db_path is None:
+            data_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "data",
+            )
+            os.makedirs(data_dir, exist_ok=True)
+            self.db_path = os.path.join(data_dir, "voiceshield_biometrics.db")
+        else:
+            self.db_path = db_path
+
+        self._init_db()
+        self._migrate_from_json_if_needed()
+
+    def _get_connection(self):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _conn_ctx():
+            conn = self.sqlite3.connect(self.db_path, timeout=10.0)
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+            conn.row_factory = self.sqlite3.Row
+            try:
+                yield conn
+            finally:
+                conn.close()
+
+        return _conn_ctx()
+
+    def _init_db(self) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS speaker_embeddings (
+                    speaker_id TEXT NOT NULL,
+                    organization_id TEXT NOT NULL,
+                    speaker_name TEXT,
+                    embedding_json TEXT NOT NULL,
+                    sample_count INTEGER NOT NULL DEFAULT 1,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    metadata_json TEXT,
+                    PRIMARY KEY (speaker_id, organization_id)
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_speaker_org
+                ON speaker_embeddings (organization_id);
+                """
+            )
+            conn.commit()
+
+    def _migrate_from_json_if_needed(self) -> None:
+        """
+        Migrates legacy entries from data/speakers.json into SQLite if DB is empty.
+        """
+        try:
+            with self._get_connection() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) FROM speaker_embeddings")
+                count = cur.fetchone()[0]
+                if count > 0:
+                    return
+
+            data_dir = self.os.path.dirname(self.db_path)
+            json_file = self.os.path.join(data_dir, "speakers.json")
+            if not self.os.path.exists(json_file):
+                return
+
+            with open(json_file, "r") as f:
+                data = self.json.load(f)
+
+            with self._get_connection() as conn:
+                for spk_id, item in data.items():
+                    created_t = float(item.get("created_at", time.time()))
+                    updated_t = float(item.get("updated_at", created_t))
+                    sample_cnt = int(item.get("sample_count", 1))
+                    emb_list = item.get("embedding", [])
+                    meta = item.get("metadata", {})
+                    spk_name = meta.get("speaker_name") or item.get("speaker_name") or ""
+                    org_id = meta.get("organization_id") or self.DEFAULT_ORG_ID
+
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO speaker_embeddings
+                        (speaker_id, organization_id, speaker_name, embedding_json, sample_count, created_at, updated_at, metadata_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            spk_id,
+                            org_id,
+                            spk_name,
+                            self.json.dumps(emb_list),
+                            sample_cnt,
+                            created_t,
+                            updated_t,
+                            self.json.dumps(meta),
+                        ),
+                    )
+                conn.commit()
+        except Exception:
+            pass
+
+    def save(self, embedding: SpeakerEmbedding, organization_id: Optional[str] = None) -> None:
+        org_id = organization_id or embedding.metadata.get("organization_id") or self.DEFAULT_ORG_ID
+        spk_name = embedding.metadata.get("speaker_name", "")
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO speaker_embeddings
+                (speaker_id, organization_id, speaker_name, embedding_json, sample_count, created_at, updated_at, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    embedding.speaker_id,
+                    org_id,
+                    spk_name,
+                    self.json.dumps(embedding.embedding),
+                    embedding.sample_count,
+                    embedding.created_at,
+                    embedding.updated_at,
+                    self.json.dumps(embedding.metadata),
+                ),
+            )
+            conn.commit()
+
+    def enroll_sample(
+        self,
+        speaker_id: str,
+        embedding: List[float],
+        speaker_name: Optional[str] = None,
+        sample_metadata: Optional[Dict[str, Any]] = None,
+        organization_id: Optional[str] = None,
+    ) -> SpeakerEmbedding:
+        org_id = organization_id or (sample_metadata or {}).get("organization_id") or self.DEFAULT_ORG_ID
+        existing = self.get(speaker_id, organization_id=org_id)
+        if existing is not None:
+            if speaker_name and not existing.metadata.get("speaker_name"):
+                existing.metadata["speaker_name"] = speaker_name
+            existing.add_sample(embedding, sample_metadata)
+            self.save(existing, organization_id=org_id)
+            return existing
+        else:
+            meta = dict(sample_metadata or {})
+            if speaker_name:
+                meta["speaker_name"] = speaker_name
+            meta["organization_id"] = org_id
+            meta["history"] = [
+                {
+                    "sample_index": 1,
+                    "enrolled_at": time.time(),
+                    **(sample_metadata or {}),
+                }
+            ]
+            new_profile = SpeakerEmbedding(
+                speaker_id=speaker_id,
+                embedding=normalize_l2(embedding),
+                created_at=time.time(),
+                updated_at=time.time(),
+                sample_count=1,
+                metadata=meta,
+            )
+            self.save(new_profile, organization_id=org_id)
+            return new_profile
+
+    def get(self, speaker_id: str, organization_id: Optional[str] = None) -> Optional[SpeakerEmbedding]:
+        org_id = organization_id or self.DEFAULT_ORG_ID
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT speaker_id, organization_id, speaker_name, embedding_json, sample_count, created_at, updated_at, metadata_json
+                FROM speaker_embeddings
+                WHERE speaker_id = ? AND organization_id = ?
+                """,
+                (speaker_id, org_id),
+            )
+            row = cur.fetchone()
+            if not row and organization_id is None:
+                # Fallback check for any org only if caller did not specify an org_id
+                cur.execute(
+                    """
+                    SELECT speaker_id, organization_id, speaker_name, embedding_json, sample_count, created_at, updated_at, metadata_json
+                    FROM speaker_embeddings
+                    WHERE speaker_id = ?
+                    LIMIT 1
+                    """,
+                    (speaker_id,),
+                )
+                row = cur.fetchone()
+
+            if not row:
+                return None
+
+            emb_list = self.json.loads(row["embedding_json"])
+            meta = self.json.loads(row["metadata_json"]) if row["metadata_json"] else {}
+            if row["speaker_name"] and not meta.get("speaker_name"):
+                meta["speaker_name"] = row["speaker_name"]
+            meta["organization_id"] = row["organization_id"]
+
+            return SpeakerEmbedding(
+                speaker_id=row["speaker_id"],
+                embedding=emb_list,
+                created_at=float(row["created_at"]),
+                updated_at=float(row["updated_at"]),
+                sample_count=int(row["sample_count"]),
+                metadata=meta,
+            )
+
+    def exists(self, speaker_id: str, organization_id: Optional[str] = None) -> bool:
+        return self.get(speaker_id, organization_id=organization_id) is not None
+
+    def delete(self, speaker_id: str, organization_id: Optional[str] = None) -> bool:
+        org_id = organization_id or self.DEFAULT_ORG_ID
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM speaker_embeddings WHERE speaker_id = ? AND organization_id = ?",
+                (speaker_id, org_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def list_speakers(self, organization_id: Optional[str] = None) -> List[str]:
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            if organization_id:
+                cur.execute(
+                    "SELECT speaker_id FROM speaker_embeddings WHERE organization_id = ? ORDER BY created_at DESC",
+                    (organization_id,),
+                )
+            else:
+                cur.execute("SELECT speaker_id FROM speaker_embeddings ORDER BY created_at DESC")
+            rows = cur.fetchall()
+            return [r["speaker_id"] for r in rows]
+
+    def clear(self) -> None:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM speaker_embeddings")
+            conn.commit()
+

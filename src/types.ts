@@ -24,6 +24,7 @@ export interface SpeakerVerificationDetail {
   threshold?: number | null;
   is_match?: boolean | null;
   speaker_mismatch_flag?: number | null;
+  sample_count?: number | null;
   inference_time_ms?: number | null;
 }
 
@@ -125,6 +126,21 @@ export interface AnalyzeResponse {
   audio_metadata: AudioMetadata;
   speech_profile?: SpeechProfile;
   language_profile?: SpeechProfile;
+  language?: string;
+  language_name?: string;
+  language_confidence?: number;
+  transcript?: string;
+  speech_context_flags?: string[];
+  asr_analysis?: {
+    language: string;
+    language_name: string;
+    language_confidence: number;
+    transcript: string;
+    is_speech: boolean;
+    inference_time_ms: number;
+    keywords_detected?: string[];
+    speech_context_flags?: string[];
+  };
   verification_session?: VerificationSessionState;
 }
 
@@ -133,9 +149,12 @@ export interface EnrollmentResponse {
   status: "ENROLLED" | string;
   speaker_id: string;
   speaker_name?: string | null;
+  sample_count: number;
   embedding_dimension: number;
   message: string;
   sample_rate_verified: number;
+  created_at?: number;
+  updated_at?: number;
   inference_time_ms: number;
 }
 
@@ -146,6 +165,7 @@ export interface VerifySpeakerResponse {
   threshold: number;
   match: boolean;
   speaker_mismatch_flag: number;
+  sample_count?: number;
   inference_time_ms: number;
   message: string;
 }
@@ -154,7 +174,9 @@ export interface EnrolledSpeaker {
   speaker_id: string;
   speaker_name?: string | null;
   dimension: number;
+  sample_count: number;
   created_at: number;
+  updated_at?: number;
 }
 
 export interface SampleAudio {
@@ -216,6 +238,21 @@ export interface LiveStreamAnalysisResult {
   audio_metrics: AudioMetadata;
   speech_profile?: SpeechProfile;
   language_profile?: SpeechProfile;
+  language?: string;
+  language_name?: string;
+  language_confidence?: number;
+  transcript?: string;
+  speech_context_flags?: string[];
+  asr_analysis?: {
+    language: string;
+    language_name: string;
+    language_confidence: number;
+    transcript: string;
+    is_speech: boolean;
+    inference_time_ms: number;
+    keywords_detected?: string[];
+    speech_context_flags?: string[];
+  };
   timestamp: number;
   verification_session?: VerificationSessionState;
 }

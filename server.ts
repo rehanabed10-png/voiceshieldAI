@@ -10,6 +10,10 @@ import { createServer as createViteServer } from "vite";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { WebSocketServer, WebSocket, RawData } from "ws";
 import { ContextRetrievalService, EnrichedCallContext, DEFAULT_ORG_ID } from "./src/server/contextService";
+import { apiAuthMiddleware, apiRateLimitMiddleware } from "./src/server/authMiddleware";
+import { notificationDispatcher } from "./src/server/notificationDispatcher";
+import { maskPhoneNumber, sanitizeAuditLogPayload } from "./src/server/piiService";
+import { DataRetentionService } from "./src/server/retentionService";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -338,6 +342,10 @@ if (SUPABASE_URL && SUPABASE_KEY) {
 // Instantiate ContextRetrievalService singleton
 const contextService = new ContextRetrievalService(supabase);
 
+// Instantiate DataRetentionService singleton for automated compliance cleanup
+const dataRetentionService = new DataRetentionService(supabase);
+dataRetentionService.startAutomatedCleanup();
+
 async function persistAnalysisToSupabase(
   resultData: any,
   params: Record<string, any>,
@@ -532,8 +540,8 @@ const handleListSpeakers = async (_req: express.Request, res: express.Response) 
   const result = await daemonManager.request("list-speakers");
   res.status(result.status).json(result.data);
 };
-app.get("/speakers", handleListSpeakers);
-app.get("/api/speakers", handleListSpeakers);
+app.get("/speakers", apiRateLimitMiddleware, apiAuthMiddleware, handleListSpeakers);
+app.get("/api/speakers", apiRateLimitMiddleware, apiAuthMiddleware, handleListSpeakers);
 
 // 3. Samples catalog for quick browser testing
 app.get("/api/samples", (_req, res) => {
@@ -683,8 +691,8 @@ const handleAnalyze = async (req: express.Request, res: express.Response) => {
   }
 };
 
-app.post("/analyze", upload.single("file"), handleAnalyze);
-app.post("/api/analyze", upload.single("file"), handleAnalyze);
+app.post("/analyze", apiRateLimitMiddleware, apiAuthMiddleware, upload.single("file"), handleAnalyze);
+app.post("/api/analyze", apiRateLimitMiddleware, apiAuthMiddleware, upload.single("file"), handleAnalyze);
 
 // 5. Speaker Enrollment: /enroll and /api/enroll
 const handleEnroll = async (req: express.Request, res: express.Response) => {
@@ -751,8 +759,8 @@ const handleEnroll = async (req: express.Request, res: express.Response) => {
   }
 };
 
-app.post("/enroll", upload.single("file"), handleEnroll);
-app.post("/api/enroll", upload.single("file"), handleEnroll);
+app.post("/enroll", apiRateLimitMiddleware, apiAuthMiddleware, upload.single("file"), handleEnroll);
+app.post("/api/enroll", apiRateLimitMiddleware, apiAuthMiddleware, upload.single("file"), handleEnroll);
 
 // 6. Speaker Verification: /verify-speaker and /api/verify-speaker
 const handleVerifySpeaker = async (req: express.Request, res: express.Response) => {
@@ -794,8 +802,8 @@ const handleVerifySpeaker = async (req: express.Request, res: express.Response) 
   }
 };
 
-app.post("/verify-speaker", upload.single("file"), handleVerifySpeaker);
-app.post("/api/verify-speaker", upload.single("file"), handleVerifySpeaker);
+app.post("/verify-speaker", apiRateLimitMiddleware, apiAuthMiddleware, upload.single("file"), handleVerifySpeaker);
+app.post("/api/verify-speaker", apiRateLimitMiddleware, apiAuthMiddleware, upload.single("file"), handleVerifySpeaker);
 
 // In-memory cache for active Secondary Verification Workflow sessions
 const activeVerificationSessions = new Map<string, any>();
@@ -1203,6 +1211,41 @@ function recordSecurityEventFromAnalysis(
     activeSecurityEvents.pop();
   }
 
+  // Dispatch webhook notification for actionable security events
+  if (["WARN", "SECONDARY_VERIFICATION", "CHALLENGE_CALLER", "HOLD_AND_STEP_UP", "BLOCK"].includes(recAction) || riskScore >= 60 || isHeld) {
+    const eventTypeStr = isHeld
+      ? "transaction_hold_alert"
+      : recAction === "BLOCK"
+      ? "threat_block_alert"
+      : recAction === "SECONDARY_VERIFICATION"
+      ? "secondary_verification_alert"
+      : "voice_risk_alert";
+
+    notificationDispatcher.dispatchRiskEvent({
+      event: eventTypeStr,
+      call_id: callId,
+      session_id: params.session_id || callId,
+      organization_id: orgId,
+      risk_score: riskScore,
+      risk_level: riskLevel,
+      recommended_action: recAction,
+      timestamp: new Date().toISOString(),
+      caller_id: newEvent.caller_id,
+      claimed_role: newEvent.claimed_role,
+      transaction_amount: newEvent.transaction_amount,
+      hold_reason: newEvent.hold_reason,
+      flags,
+      contributing_signals: {
+        fake_probability: fakeProb,
+        speaker_similarity: resultData.speaker_verification?.similarity_score,
+        speaker_match: resultData.speaker_verification?.is_match,
+        acoustic_anomaly: resultData.acoustic_anomaly,
+        role_mismatch: enrichedContext?.role_mismatch,
+        language: resultData.language,
+      },
+    });
+  }
+
   return newEvent;
 }
 
@@ -1263,8 +1306,8 @@ const handleStreamChunk = async (req: express.Request, res: express.Response) =>
   }
 };
 
-app.post("/stream-chunk", handleStreamChunk);
-app.post("/api/stream-chunk", handleStreamChunk);
+app.post("/stream-chunk", apiRateLimitMiddleware, apiAuthMiddleware, handleStreamChunk);
+app.post("/api/stream-chunk", apiRateLimitMiddleware, apiAuthMiddleware, handleStreamChunk);
 
 // ----------------------------------------------------
 // FEATURE 1: SECONDARY VERIFICATION WORKFLOW ENDPOINTS
@@ -1820,13 +1863,13 @@ const handleUpdatePolicy = async (req: express.Request, res: express.Response) =
   }
 };
 
-app.get("/api/policy", handleGetPolicy);
-app.get("/api/organization-policy", handleGetPolicy);
+app.get("/api/policy", apiRateLimitMiddleware, apiAuthMiddleware, handleGetPolicy);
+app.get("/api/organization-policy", apiRateLimitMiddleware, apiAuthMiddleware, handleGetPolicy);
 
-app.put("/api/policy", handleUpdatePolicy);
-app.post("/api/policy", handleUpdatePolicy);
-app.put("/api/organization-policy", handleUpdatePolicy);
-app.post("/api/organization-policy", handleUpdatePolicy);
+app.put("/api/policy", apiRateLimitMiddleware, apiAuthMiddleware, handleUpdatePolicy);
+app.post("/api/policy", apiRateLimitMiddleware, apiAuthMiddleware, handleUpdatePolicy);
+app.put("/api/organization-policy", apiRateLimitMiddleware, apiAuthMiddleware, handleUpdatePolicy);
+app.post("/api/organization-policy", apiRateLimitMiddleware, apiAuthMiddleware, handleUpdatePolicy);
 
 app.get("/api/policy/audit-logs", async (req: express.Request, res: express.Response) => {
   try {
@@ -1886,6 +1929,23 @@ app.post("/api/policy/reset", async (req: express.Request, res: express.Response
 });
 
 
+
+// ----------------------------------------------------
+// DATA RETENTION & COMPLIANCE ENDPOINTS
+// ----------------------------------------------------
+app.get("/api/admin/retention/policy", (req: express.Request, res: express.Response) => {
+  res.json({ status: "ok", policy: dataRetentionService.getRetentionPolicy() });
+});
+
+app.post("/api/admin/retention/purge", apiAuthMiddleware, async (req: express.Request, res: express.Response) => {
+  try {
+    const targetOrgId = (req as any).authoritativeOrgId || req.body?.organization_id;
+    const result = await dataRetentionService.purgeExpiredRecords(targetOrgId);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to execute retention purge." });
+  }
+});
 
 // ----------------------------------------------------
 // WEBSOCKET LIVE STREAMING ENDPOINT (/ws/live-stream)
@@ -1973,6 +2033,12 @@ function setupLiveStreamingWebSocket(server: http.Server) {
                 audio_metrics: result.data.audio_metrics,
                 speech_profile: result.data.speech_profile,
                 language_profile: result.data.speech_profile,
+                language: result.data.language,
+                language_name: result.data.language_name,
+                language_confidence: result.data.language_confidence,
+                transcript: result.data.transcript,
+                speech_context_flags: result.data.speech_context_flags || [],
+                asr_analysis: result.data.asr_analysis,
                 verification_session: result.data.verification_session,
                 timestamp: Date.now(),
               })
@@ -2030,6 +2096,13 @@ function setupLiveStreamingWebSocket(server: http.Server) {
           // JSON control message or base64 audio payload
           const text = data.toString("utf-8");
           const msg = JSON.parse(text);
+
+          if (msg.type === "ping") {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+            }
+            return;
+          }
 
           if (msg.type === "config" || msg.type === "start" || msg.type === "start_stream") {
             if (msg.window_duration_sec && typeof msg.window_duration_sec === "number") {

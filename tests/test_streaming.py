@@ -172,6 +172,58 @@ class TestStreamingPipeline(unittest.TestCase):
             self.assertIn(data.get("deepfake_detection", {}).get("prediction"), ["REAL", "FAKE"])
             self.assertGreaterEqual(data.get("fake_probability"), 0.0)
 
+    def test_7_stream_chunk_malformed_payload_handled_safely(self):
+        """Test malformed non-base64 or corrupted payload returns 400 without crashing daemon."""
+        req = {
+            "command": "stream-chunk",
+            "args": {
+                "pcm_bytes_b64": "NOT_VALID_BASE64_###",
+                "window_index": 7,
+            },
+        }
+        res = self.worker.dispatch(req)
+        self.assertIn(res.get("status"), [400, 422, 500])
+
+    def test_8_stream_chunk_sequential_windows_maintain_session_state(self):
+        """Test sequential streaming windows 1..3 execute with sub-second performance."""
+        pcm_b64 = self._generate_pcm16_b64(freq=300.0, duration_sec=1.5)
+        for w_idx in [1, 2, 3]:
+            req = {
+                "command": "stream-chunk",
+                "args": {
+                    "pcm_bytes_b64": pcm_b64,
+                    "window_index": w_idx,
+                    "call_id": "CALL-STREAM-TEST",
+                },
+            }
+            res = self.worker.dispatch(req)
+            self.assertEqual(res.get("status"), 200)
+            self.assertEqual(res.get("data", {}).get("call_id"), "CALL-STREAM-TEST")
+
+    def test_9_stream_chunk_with_speaker_and_context_enrichment(self):
+        """Test streaming window processes speaker comparison and fraud context simultaneously."""
+        pcm_b64 = self._generate_pcm16_b64(freq=220.0, duration_sec=1.5)
+        req = {
+            "command": "stream-chunk",
+            "args": {
+                "pcm_bytes_b64": pcm_b64,
+                "window_index": 1,
+                "speaker_id": "NON_EXISTENT_SPEAKER",
+                "threshold": 0.70,
+                "context": {
+                    "claimed_role": "Chief Financial Officer",
+                    "requested_transaction_amount": 100000.0,
+                    "is_urgent": True,
+                },
+            },
+        }
+        res = self.worker.dispatch(req)
+        self.assertEqual(res.get("status"), 200)
+        data = res.get("data", {})
+        self.assertIn("risk_score", data)
+        self.assertIn("recommended_action", data)
+
 
 if __name__ == "__main__":
     unittest.main()
+

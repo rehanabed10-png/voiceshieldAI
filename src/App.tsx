@@ -8,7 +8,6 @@ import { AnalysisResult } from "./components/AnalysisResult";
 import { ErrorAlert } from "./components/ErrorAlert";
 import { SpeakerProfiles } from "./components/SpeakerProfiles";
 import { LiveAnalysisView } from "./components/LiveAnalysisView";
-import { SecurityEventsView } from "./components/SecurityEventsView";
 import { PolicyConfigView } from "./components/PolicyConfigView";
 import {
   AnalyzeResponse,
@@ -265,12 +264,7 @@ export default function App() {
             />
           )}
 
-          {/* Tab 4: Security Events & Audit Trail */}
-          {(activeTab === "events" || (activeTab as string) === "security") && (
-            <SecurityEventsView />
-          )}
-
-          {/* Tab 5: Policy Engine Configuration */}
+          {/* Tab 4: Policy Engine Configuration */}
           {activeTab === "policy" && (
             <PolicyConfigView />
           )}

@@ -42,8 +42,10 @@ from app.utils.audio_utils import (
     calculate_snr_estimate,
     linear_to_db,
 )
+from app.models.asr import SpeechRecognizer, ASRResult
 from app.models.detector import VoiceCloneDetector
 from app.models.speaker_verifier import (
+    DatabaseSpeakerStore,
     InMemorySpeakerStore,
     PretrainedECAPASpeakerVerifier,
     SpeakerEmbedding,
@@ -292,26 +294,21 @@ def extract_call_context(args: dict) -> CallContext:
     )
 
 
-def load_persistent_store() -> InMemorySpeakerStore:
-    store = InMemorySpeakerStore()
-    if os.path.exists(SPEAKER_STORE_FILE):
-        try:
-            with open(SPEAKER_STORE_FILE, "r") as f:
-                data = json.load(f)
-                for spk_id, item in data.items():
-                    emb = SpeakerEmbedding(
-                        speaker_id=item["speaker_id"],
-                        embedding=item["embedding"],
-                        created_at=item.get("created_at", time.time()),
-                        metadata=item.get("metadata", {}),
-                    )
-                    store.save(emb)
-        except Exception as e:
-            sys.stderr.write(f"Warning loading speaker store: {e}\n")
-    return store
+def load_persistent_store() -> DatabaseSpeakerStore:
+    """
+    Returns the persistent SQLite database-backed speaker store.
+    Directly persists 192-D biometric vectors with multi-tenant scoping.
+    """
+    return DatabaseSpeakerStore()
 
 
-def save_persistent_store(store: InMemorySpeakerStore):
+def save_persistent_store(store: Any):
+    """
+    DatabaseSpeakerStore automatically commits records directly to SQLite.
+    If an in-memory store is passed, saves to file as fallback.
+    """
+    if isinstance(store, DatabaseSpeakerStore):
+        return
     try:
         data = {}
         for spk_id in store.list_speakers():
@@ -321,11 +318,13 @@ def save_persistent_store(store: InMemorySpeakerStore):
                     "speaker_id": emb.speaker_id,
                     "embedding": emb.embedding,
                     "created_at": emb.created_at,
+                    "updated_at": emb.updated_at,
+                    "sample_count": emb.sample_count,
                     "dimension": emb.dimension,
                     "metadata": emb.metadata,
                 }
         with open(SPEAKER_STORE_FILE, "w") as f:
-            json.dump(data, f)
+            json.dump(data, f, indent=2)
     except Exception as e:
         sys.stderr.write(f"Warning saving speaker store: {e}\n")
 
@@ -359,6 +358,7 @@ class PipelineWorker:
         self.speaker_verifier = PretrainedECAPASpeakerVerifier()
         self.speaker_verifier.load_model()
         self.speaker_store = load_persistent_store()
+        self.speech_recognizer = SpeechRecognizer.get_instance()
         self.risk_engine = VoiceShieldRiskEngine()
         self.model_load_count = 1
         self._warmup()
@@ -394,8 +394,12 @@ class PipelineWorker:
             if hasattr(self, "speaker_verifier") and self.speaker_verifier is not None:
                 self.speaker_verifier.extract_embedding(warmup_audio, speaker_id="__warmup__")
 
+            # Warmup SpeechRecognizer (Whisper-Tiny)
+            if hasattr(self, "speech_recognizer") and self.speech_recognizer is not None:
+                self.speech_recognizer.transcribe(warmup_audio, max_new_tokens=4)
+
             warmup_ms = (time.perf_counter() - t0) * 1000.0
-            sys.stderr.write(f"[PipelineWorker] One-time model warmup completed in {warmup_ms:.1f}ms.\n")
+            sys.stderr.write(f"[PipelineWorker] One-time model warmup (Wav2Vec2 + ECAPA + Whisper) completed in {warmup_ms:.1f}ms.\n")
         except Exception as err:
             # Fail gracefully without blocking daemon startup
             sys.stderr.write(f"[PipelineWorker:WarmupWarning] Warmup skipped: {err}\n")
@@ -426,8 +430,10 @@ class PipelineWorker:
             speakers.append({
                 "speaker_id": emb.speaker_id,
                 "speaker_name": emb.metadata.get("speaker_name"),
+                "sample_count": emb.sample_count,
                 "dimension": emb.dimension,
                 "created_at": emb.created_at,
+                "updated_at": emb.updated_at,
             })
         return {"status": "ok", "speakers": speakers}
 
@@ -495,6 +501,7 @@ class PipelineWorker:
                     "threshold": round(ver_res.threshold, 4),
                     "is_match": ver_res.is_match,
                     "speaker_mismatch_flag": ver_res.speaker_mismatch_flag,
+                    "sample_count": enrolled.sample_count,
                     "inference_time_ms": round(ver_res.inference_time_ms, 2),
                 }
             else:
@@ -509,7 +516,24 @@ class PipelineWorker:
                     "inference_time_ms": None,
                 }
 
+        # 4. Local Multilingual Speech Recognition (ASR) & Language Identification
+        asr_res = ASRResult()
+        try:
+            if hasattr(self, "speech_recognizer") and self.speech_recognizer is not None:
+                asr_res = self.speech_recognizer.transcribe(preprocessed, sample_rate=preprocessed.sample_rate)
+        except Exception as e:
+            sys.stderr.write(f"[PipelineWorker:ASRError] {e}\n")
+
         call_context = extract_call_context(args)
+
+        # Merge speech-derived transcript and keywords into context
+        if asr_res.is_speech and asr_res.transcript:
+            if not call_context.transcript_text:
+                call_context.transcript_text = asr_res.transcript
+            if asr_res.keywords_detected:
+                for kw in asr_res.keywords_detected:
+                    if kw not in call_context.suspicious_keywords_found:
+                        call_context.suspicious_keywords_found.append(kw)
 
         risk_assessment = self.risk_engine.evaluate(
             fake_probability=prediction_result.fake_probability,
@@ -532,9 +556,10 @@ class PipelineWorker:
 
         speech_prof = resolve_speech_profile(
             selected_language=call_context.selected_language or call_context.language,
-            detected_language=call_context.detected_language,
-            accent_region_override=call_context.accent_region or call_context.accent_profile,
-            transcript_text=call_context.transcript_text,
+            detected_language=asr_res.language_name if asr_res.is_speech else call_context.detected_language,
+            language_confidence=asr_res.language_confidence if asr_res.is_speech else call_context.language_confidence,
+            transcript_text=call_context.transcript_text or asr_res.transcript,
+            transcript_language=asr_res.language if asr_res.is_speech else call_context.transcript_language,
         )
 
         return {
@@ -544,6 +569,12 @@ class PipelineWorker:
             "verification_session": verification_session.to_dict(),
             "speech_profile": speech_prof,
             "language_profile": speech_prof,
+            "language": asr_res.language,
+            "language_name": asr_res.language_name,
+            "language_confidence": asr_res.language_confidence,
+            "transcript": asr_res.transcript or call_context.transcript_text or "",
+            "speech_context_flags": asr_res.speech_context_flags,
+            "asr_analysis": asr_res.to_dict(),
             "deepfake_detection": {
                 "prediction": prediction_result.prediction,
                 "fake_probability": round(prediction_result.fake_probability, 4),
@@ -643,6 +674,21 @@ class PipelineWorker:
                 "risk_level": "LOW",
                 "recommended_action": "ALLOW",
                 "flags": ["VAD_SILENCE_WINDOW"],
+                "language": "unknown",
+                "language_name": "Silence",
+                "language_confidence": 0.0,
+                "transcript": "",
+                "speech_context_flags": [],
+                "asr_analysis": {
+                    "language": "unknown",
+                    "language_name": "Silence",
+                    "language_confidence": 0.0,
+                    "transcript": "",
+                    "is_speech": False,
+                    "inference_time_ms": 0.0,
+                    "keywords_detected": [],
+                    "speech_context_flags": [],
+                },
                 "prosody_reasons": ["Background silence / no active speech detected"],
                 "prosody_metrics": {
                     "f0_mean_hz": 0.0,
@@ -757,6 +803,7 @@ class PipelineWorker:
                     "threshold": round(ver_res.threshold, 4),
                     "is_match": ver_res.is_match,
                     "speaker_mismatch_flag": ver_res.speaker_mismatch_flag,
+                    "sample_count": enrolled.sample_count,
                     "inference_time_ms": round(ver_res.inference_time_ms, 2),
                 }
             else:
@@ -771,7 +818,24 @@ class PipelineWorker:
                     "inference_time_ms": None,
                 }
 
-        # 4. Context & Risk Engine Fusion
+        # 4. Local Multilingual Speech Recognition (ASR) & Language Identification
+        asr_res = ASRResult()
+        try:
+            if hasattr(self, "speech_recognizer") and self.speech_recognizer is not None:
+                asr_res = self.speech_recognizer.transcribe(preprocessed, sample_rate=sr)
+        except Exception as e:
+            sys.stderr.write(f"[PipelineWorker:ASRError] {e}\n")
+
+        # Merge speech-derived transcript and keywords into context
+        if asr_res.is_speech and asr_res.transcript:
+            if not call_context.transcript_text:
+                call_context.transcript_text = asr_res.transcript
+            if asr_res.keywords_detected:
+                for kw in asr_res.keywords_detected:
+                    if kw not in call_context.suspicious_keywords_found:
+                        call_context.suspicious_keywords_found.append(kw)
+
+        # 5. Context & Risk Engine Fusion
         risk_assessment = self.risk_engine.evaluate(
             fake_probability=prediction_result.fake_probability,
             speaker_mismatch=speaker_mismatch_signal,
@@ -794,9 +858,10 @@ class PipelineWorker:
 
         speech_prof = resolve_speech_profile(
             selected_language=call_context.selected_language or call_context.language,
-            detected_language=call_context.detected_language,
-            accent_region_override=call_context.accent_region or call_context.accent_profile,
-            transcript_text=call_context.transcript_text,
+            detected_language=asr_res.language_name if asr_res.is_speech else call_context.detected_language,
+            language_confidence=asr_res.language_confidence if asr_res.is_speech else call_context.language_confidence,
+            transcript_text=call_context.transcript_text or asr_res.transcript,
+            transcript_language=asr_res.language if asr_res.is_speech else call_context.transcript_language,
         )
 
         return {
@@ -811,6 +876,12 @@ class PipelineWorker:
             "verification_session": verification_session.to_dict(),
             "speech_profile": speech_prof,
             "language_profile": speech_prof,
+            "language": asr_res.language,
+            "language_name": asr_res.language_name,
+            "language_confidence": asr_res.language_confidence,
+            "transcript": asr_res.transcript or call_context.transcript_text or "",
+            "speech_context_flags": asr_res.speech_context_flags,
+            "asr_analysis": asr_res.to_dict(),
             "flags": risk_assessment.flags,
             "prosody_reasons": prosody_res.anomaly_reasons,
             "prosody_metrics": {k: round(float(v), 4) for k, v in prosody_res.features.items()},
@@ -860,20 +931,31 @@ class PipelineWorker:
         self.sync_store()
 
         start_time = time.perf_counter()
-        embedding = self.speaker_verifier.extract_embedding(preprocessed, speaker_id=speaker_id)
-        if speaker_name:
-            embedding.metadata["speaker_name"] = speaker_name
+        raw_emb = self.speaker_verifier.extract_embedding(preprocessed, speaker_id=speaker_id)
 
-        self.speaker_store.save(embedding)
+        sample_meta = {
+            "processed_duration_sec": round(preprocessed.processed_duration_sec, 2),
+            "snr_db": round(preprocessed.estimated_snr_db, 2),
+            "rms_db": round(preprocessed.rms_energy_db, 2),
+        }
+        enrolled = self.speaker_store.enroll_sample(
+            speaker_id=speaker_id,
+            embedding=raw_emb.embedding,
+            speaker_name=speaker_name,
+            sample_metadata=sample_meta,
+        )
         save_persistent_store(self.speaker_store)
         total_time_ms = (time.perf_counter() - start_time) * 1000.0
 
         return {
             "status": "ENROLLED",
             "speaker_id": speaker_id,
-            "speaker_name": speaker_name,
-            "embedding_dimension": embedding.dimension,
-            "message": f"Speaker '{speaker_id}' successfully enrolled ({preprocessed.processed_duration_sec:.2f}s audio processed).",
+            "speaker_name": speaker_name or enrolled.metadata.get("speaker_name"),
+            "sample_count": enrolled.sample_count,
+            "embedding_dimension": enrolled.dimension,
+            "created_at": enrolled.created_at,
+            "updated_at": enrolled.updated_at,
+            "message": f"Speaker '{speaker_id}' sample #{enrolled.sample_count} successfully enrolled ({preprocessed.processed_duration_sec:.2f}s audio processed; multi-sample centroid updated).",
             "sample_rate_verified": preprocessed.sample_rate,
             "inference_time_ms": round(total_time_ms, 2),
         }
@@ -914,8 +996,9 @@ class PipelineWorker:
             "threshold": round(ver_result.threshold, 4),
             "match": ver_result.is_match,
             "speaker_mismatch_flag": ver_result.speaker_mismatch_flag,
+            "sample_count": enrolled_embedding.sample_count,
             "inference_time_ms": round(ver_result.inference_time_ms, 2),
-            "message": f"Verification completed for speaker '{speaker_id}': {match_desc}.",
+            "message": f"Verification completed for speaker '{speaker_id}' (against {enrolled_embedding.sample_count}-sample centroid): {match_desc}.",
         }
 
     def dispatch(self, req: dict) -> dict:

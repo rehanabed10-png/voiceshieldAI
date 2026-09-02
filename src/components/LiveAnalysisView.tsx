@@ -38,6 +38,9 @@ import {
   Sliders,
   Volume2,
   Gauge,
+  Globe,
+  Languages,
+  MessageSquare,
 } from "lucide-react";
 import {
   AnalyzeResponse,
@@ -870,6 +873,110 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
                   : latestFileResult
                   ? `Action: ${latestFileResult.response.recommended_action}`
                   : "0–100 Multi-Signal Fusion"}
+              </div>
+            </div>
+          </div>
+
+          {/* Liquid Glass: Local Multilingual ASR & Language Intelligence Panel */}
+          <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-xl space-y-4 relative overflow-hidden bg-slate-900/60 backdrop-blur-md">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <Languages className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-sm font-bold text-white font-sans">
+                  Local Multilingual AI & Real-Time Speech Intelligence
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
+                  LOCAL WHISPER ASR + LID
+                </span>
+                <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">
+                  OFFLINE INFERENCE
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Card 1: Inferred Language */}
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-blue-400" />
+                    Detected Language
+                  </span>
+                  <span className="text-[9px] font-mono text-slate-500">Acoustic LID</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xl font-bold text-white font-mono">
+                    {isMicMode
+                      ? latestMicResult?.language_name || (latestMicResult?.language ? latestMicResult.language.toUpperCase() : "Awaiting Speech")
+                      : latestFileResult?.response.language_name || (latestFileResult?.response.language ? latestFileResult.response.language.toUpperCase() : "Awaiting Speech")}
+                  </span>
+                  {(isMicMode ? latestMicResult?.language : latestFileResult?.response.language) &&
+                    (isMicMode ? latestMicResult?.language : latestFileResult?.response.language) !== "unknown" && (
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                        {isMicMode ? latestMicResult?.language : latestFileResult?.response.language}
+                      </span>
+                    )}
+                </div>
+                <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between pt-1 border-t border-white/5">
+                  <span>Inference Confidence:</span>
+                  <span className="text-slate-200 font-bold">
+                    {isMicMode
+                      ? latestMicResult?.language_confidence
+                        ? `${(latestMicResult.language_confidence * 100).toFixed(0)}%`
+                        : "—"
+                      : latestFileResult?.response.language_confidence
+                      ? `${(latestFileResult.response.language_confidence * 100).toFixed(0)}%`
+                      : "—"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 2: Live Rolling Speech Transcript */}
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 space-y-2 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                    Live Speech Transcript (Multilingual)
+                  </span>
+                  <span className="text-[9px] font-mono text-emerald-400 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Real-time STT
+                  </span>
+                </div>
+                <div className="min-h-[48px] max-h-24 overflow-y-auto p-2.5 rounded-lg bg-slate-950/70 border border-white/5 text-xs font-mono text-slate-100 select-text leading-relaxed">
+                  {(isMicMode ? latestMicResult?.transcript : latestFileResult?.response.transcript) ? (
+                    <span className="text-slate-100">
+                      "{isMicMode ? latestMicResult?.transcript : latestFileResult?.response.transcript}"
+                    </span>
+                  ) : (
+                    <span className="text-slate-500 italic">
+                      {isMicMode
+                        ? sessionStatus === "listening" || sessionStatus === "streaming"
+                          ? "Listening for active speech..."
+                          : "Awaiting microphone input..."
+                        : "Start simulation or upload audio to transcribe..."}
+                    </span>
+                  )}
+                </div>
+                {/* Speech-derived fraud indicators */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <span className="text-[10px] font-mono text-slate-400">Speech Context:</span>
+                  {(isMicMode ? latestMicResult?.speech_context_flags : latestFileResult?.response.speech_context_flags)?.length ? (
+                    (isMicMode ? latestMicResult?.speech_context_flags : latestFileResult?.response.speech_context_flags)!.map((flag, idx) => (
+                      <span
+                        key={idx}
+                        className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 flex items-center gap-1"
+                      >
+                        <AlertTriangle className="w-2.5 h-2.5 text-red-400" />
+                        {flag.replace("SPEECH_", "")}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[10px] font-mono text-slate-500">No suspicious keywords in speech</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
