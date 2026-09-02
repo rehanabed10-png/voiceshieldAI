@@ -5,7 +5,9 @@ silence removal, amplitude normalization, and signal validation.
 """
 
 import math
+import os
 import struct
+import subprocess
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,18 +49,61 @@ class AudioPreprocessor:
 
     def load_audio_file(self, file_path: Union[str, Path]) -> Tuple[List[float], int]:
         """
-        Load an audio file from disk, convert to float array in [-1.0, 1.0], and get native sample rate.
-        Supports Librosa/Soundfile/Torchaudio if installed, with native standard-library wave fallback.
+        Load an audio file from disk, convert to float array in [-1.0, 1.0], and get sample rate.
+        Supports all major formats (WAV, MP3, M4A, FLAC, OGG, WEBM, AAC) using universal ffmpeg
+        decoding with fallback to soundfile and native wave modules.
         """
         path = Path(file_path)
         if not path.exists() or not path.is_file():
             raise FileNotFoundAudioError(f"Audio file not found: '{file_path}'")
 
-        # 1. Try modern audio libraries if available in the Python environment
+        if path.stat().st_size == 0:
+            raise CorruptAudioError(f"Audio file is empty (0 bytes): '{file_path}'")
+
+        # 1. Primary decoder: Universal ffmpeg decoding (supports WAV, MP3, M4A, FLAC, OGG, WEBM, AAC)
+        try:
+            cmd = [
+                "ffmpeg",
+                "-nostdin",
+                "-v", "error",
+                "-i", str(path),
+                "-f", "s16le",
+                "-acodec", "pcm_s16le",
+                "-ar", "16000",
+                "-ac", "1",
+                "-"
+            ]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            out_bytes, err_bytes = proc.communicate(timeout=15)
+
+            if proc.returncode == 0 and len(out_bytes) > 0:
+                total_samples = len(out_bytes) // 2
+                if total_samples == 0:
+                    raise CorruptAudioError(f"Decoded audio file contains 0 samples: '{file_path}'")
+                fmt = f"<{total_samples}h"
+                ints = struct.unpack(fmt, out_bytes)
+                samples = [val / 32768.0 for val in ints]
+                return samples, 16000
+            elif proc.returncode != 0:
+                # If ffmpeg returned non-zero, check if file is corrupt
+                err_msg = err_bytes.decode("utf-8", errors="ignore").strip()
+                if "Invalid data found" in err_msg or "does not contain any stream" in err_msg:
+                    raise CorruptAudioError(f"Corrupt or invalid audio file '{file_path}': {err_msg}")
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise CorruptAudioError(f"Timeout decoding audio file '{file_path}'")
+        except FileNotFoundError:
+            # ffmpeg binary not installed on PATH, continue to fallback libraries
+            pass
+        except CorruptAudioError:
+            raise
+        except Exception:
+            pass
+
+        # 2. Secondary fallback: soundfile if installed
         try:
             import soundfile as sf
             data, sr = sf.read(str(path), dtype="float32")
-            # If multi-channel (samples, channels), convert to mono list
             if len(data.shape) > 1 and data.shape[1] > 1:
                 mono_data = data.mean(axis=1)
             else:
@@ -66,11 +111,10 @@ class AudioPreprocessor:
             return mono_data.tolist(), sr
         except ImportError:
             pass
-        except Exception as e:
-            # Soundfile failed to read, try fallback or raise corrupt error
+        except Exception:
             pass
 
-        # 2. Try native standard library 'wave' for WAV files
+        # 3. Native fallback: Python standard library 'wave' for standard PCM WAV files
         try:
             with wave.open(str(path), "rb") as wav:
                 num_channels = wav.getnchannels()
@@ -83,7 +127,6 @@ class AudioPreprocessor:
 
                 raw_bytes = wav.readframes(num_frames)
 
-                # Parse PCM formats based on sample width
                 samples: List[float] = []
                 if sample_width == 2:  # 16-bit PCM
                     total_samples = len(raw_bytes) // 2
@@ -92,7 +135,6 @@ class AudioPreprocessor:
                     if num_channels == 1:
                         samples = [val / 32768.0 for val in ints]
                     else:
-                        # Average channels for mono
                         samples = [
                             sum(ints[i : i + num_channels]) / (num_channels * 32768.0)
                             for i in range(0, len(ints), num_channels)

@@ -35,6 +35,8 @@ import {
   SecurityEvent,
   SecurityEventsSummary,
   SecurityEventFilterType,
+  SecurityEventType,
+  SecurityEventSeverity,
   VerificationSessionState,
 } from "../types";
 import {
@@ -72,24 +74,81 @@ export const SecurityEventsView: React.FC = () => {
     setError(null);
     try {
       const response = await fetchSecurityEvents(filterLevel, searchQuery);
-      if (response && response.events) {
-        setEvents(response.events);
-        if (response.summary) {
-          setSummary(response.summary);
+      if (response) {
+        const rawEvents = Array.isArray(response.events)
+          ? response.events
+          : Array.isArray(response)
+          ? response
+          : [];
+
+        const sanitizedEvents: SecurityEvent[] = rawEvents.map((evt: any) => ({
+          id: String(evt?.id || `EVT-${Math.random().toString(36).substring(2, 9)}`),
+          call_id: String(evt?.call_id || "CALL-UNKNOWN"),
+          organization_id: String(evt?.organization_id || "00000000-0000-0000-0000-000000000001"),
+          event_type: (String(evt?.event_type || "HIGH_RISK_CALL") as SecurityEventType),
+          severity: (String(evt?.severity || "HIGH").toUpperCase() as SecurityEventSeverity),
+          timestamp: typeof evt?.timestamp === "number" ? evt.timestamp : (evt?.timestamp ? new Date(evt.timestamp).getTime() : Date.now()),
+          caller_id: evt?.caller_id ? String(evt.caller_id) : null,
+          contact_id: evt?.contact_id ? String(evt.contact_id) : null,
+          contact_name: evt?.contact_name ? String(evt.contact_name) : null,
+          claimed_role: evt?.claimed_role ? String(evt.claimed_role) : null,
+          speaker_id: evt?.speaker_id ? String(evt.speaker_id) : null,
+          risk_score: typeof evt?.risk_score === "number" ? evt.risk_score : 0,
+          risk_level: String(evt?.risk_level || "UNKNOWN"),
+          explanation: String(evt?.explanation || "Security event recorded in threat intelligence store."),
+          recommended_action: String(evt?.recommended_action || "ALLOW"),
+          verification_status: String(evt?.verification_status || "PENDING"),
+          is_held: Boolean(evt?.is_held),
+          transaction_amount: typeof evt?.transaction_amount === "number" ? evt.transaction_amount : null,
+          hold_reason: evt?.hold_reason ? String(evt.hold_reason) : null,
+          flags: Array.isArray(evt?.flags) ? evt.flags.filter(Boolean).map(String) : [],
+          contributing_signals: evt?.contributing_signals || {},
+          status: evt?.status === "RESOLVED" ? "RESOLVED" : evt?.status === "ESCALATED" ? "ESCALATED" : "OPEN",
+          resolved_at: typeof evt?.resolved_at === "number" ? evt.resolved_at : (evt?.resolved_at ? new Date(evt.resolved_at).getTime() : null),
+          resolved_by: evt?.resolved_by ? String(evt.resolved_by) : null,
+          is_simulated: Boolean(evt?.is_simulated),
+          verification_session: evt?.verification_session,
+        }));
+
+        setEvents(sanitizedEvents);
+
+        if (response.summary && typeof response.summary === "object") {
+          setSummary({
+            total_events: Number(response.summary.total_events ?? sanitizedEvents.length),
+            active_threats: Number(response.summary.active_threats ?? 0),
+            critical_events: Number(response.summary.critical_events ?? 0),
+            calls_requiring_verification: Number(response.summary.calls_requiring_verification ?? 0),
+            transactions_on_hold: Number(response.summary.transactions_on_hold ?? 0),
+            blocked_calls: Number(response.summary.blocked_calls ?? 0),
+          });
+        } else {
+          setSummary({
+            total_events: sanitizedEvents.length,
+            active_threats: sanitizedEvents.filter((e) => e.severity === "CRITICAL" || e.severity === "HIGH").length,
+            critical_events: sanitizedEvents.filter((e) => e.severity === "CRITICAL").length,
+            calls_requiring_verification: sanitizedEvents.filter((e) =>
+              ["SECONDARY_VERIFICATION", "CHALLENGE_CALLER"].includes(e.recommended_action)
+            ).length,
+            transactions_on_hold: sanitizedEvents.filter((e) => e.is_held).length,
+            blocked_calls: sanitizedEvents.filter((e) => e.recommended_action === "BLOCK").length,
+          });
         }
+
         // Auto-expand first critical event if none expanded yet
-        if (!expandedEventId && response.events.length > 0) {
-          const firstCrit = response.events.find(
+        if (!expandedEventId && sanitizedEvents.length > 0) {
+          const firstCrit = sanitizedEvents.find(
             (e) => e.severity === "CRITICAL" || e.severity === "HIGH"
           );
           if (firstCrit) {
             setExpandedEventId(firstCrit.id);
           }
         }
+      } else {
+        setEvents([]);
       }
     } catch (err: any) {
       console.error("[SecurityEventsView] Error fetching events:", err);
-      setError(err.message || "Failed to fetch security events.");
+      setError(err?.message || "Failed to fetch security events.");
     } finally {
       if (!isBackground) setLoading(false);
     }
@@ -435,22 +494,65 @@ export const SecurityEventsView: React.FC = () => {
 
         {/* Security Incident Stream */}
         <div className="space-y-3 pt-1">
+          {/* 1. Explicit LOADING State */}
           {loading && events.length === 0 ? (
-            <div className="p-12 text-center rounded-2xl bg-slate-900/40 border border-white/10 text-slate-400 text-xs font-mono flex flex-col items-center justify-center gap-3">
-              <RefreshCw className="w-6 h-6 animate-spin text-blue-400" />
-              <span>Querying threat intelligence database and in-memory intercept telemetry...</span>
+            <div id="security-events-loading" className="p-12 text-center rounded-2xl bg-slate-900/60 border border-white/10 text-slate-300 text-xs font-mono flex flex-col items-center justify-center gap-3 shadow-xl">
+              <RefreshCw className="w-7 h-7 animate-spin text-blue-400" />
+              <div className="space-y-1">
+                <p className="font-bold text-white text-sm">Querying Threat Intelligence Telemetry...</p>
+                <p className="text-slate-400 text-xs">Retrieving security incident records and multi-signal intercept logs</p>
+              </div>
             </div>
           ) : error ? (
-            <div className="p-6 text-center rounded-2xl bg-red-950/30 border border-red-500/40 text-red-300 text-xs font-mono">
-              <AlertTriangle className="w-5 h-5 mx-auto mb-2 text-red-400" />
-              {error}
+            /* 4. Explicit API ERROR State */
+            <div id="security-events-error" className="p-8 text-center rounded-2xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs font-mono space-y-4 shadow-xl">
+              <div className="w-12 h-12 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 mx-auto">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 max-w-md mx-auto">
+                <h4 className="text-sm font-bold text-white">Security Telemetry Service Unavailable</h4>
+                <p className="text-red-300/90 text-xs leading-relaxed">{error}</p>
+              </div>
+              <button
+                onClick={() => loadData(false)}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-mono text-xs font-bold transition-all shadow-md inline-flex items-center gap-2"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Retry Connection
+              </button>
             </div>
           ) : events.length === 0 ? (
-            <div className="p-12 text-center rounded-2xl bg-slate-900/40 border border-white/10 text-slate-400 text-xs font-mono">
-              <ShieldCheck className="w-8 h-8 text-slate-500 mx-auto mb-2" />
-              No security incidents matching current query parameters.
+            /* 3. Explicit ZERO EVENTS / Empty State */
+            <div id="security-events-empty" className="p-12 text-center rounded-2xl bg-slate-900/40 border border-white/10 text-slate-400 text-xs font-mono space-y-3 shadow-xl">
+              <div className="w-12 h-12 rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center text-slate-400 mx-auto">
+                <ShieldCheck className="w-6 h-6 text-emerald-400" />
+              </div>
+              <div className="space-y-1 max-w-md mx-auto">
+                <h4 className="text-sm font-bold text-white">
+                  {filterLevel !== "ALL" || searchQuery.trim() !== ""
+                    ? "No Matching Security Incidents"
+                    : "No security events recorded yet."}
+                </h4>
+                <p className="text-slate-400 text-xs leading-relaxed">
+                  {filterLevel !== "ALL" || searchQuery.trim() !== ""
+                    ? "No security events match the current filter or search criteria."
+                    : "Live calls and audio scans with elevated risk or anomalous prosody will automatically be logged here."}
+                </p>
+              </div>
+              {(filterLevel !== "ALL" || searchQuery.trim() !== "") && (
+                <button
+                  onClick={() => {
+                    setFilterLevel("ALL");
+                    setSearchQuery("");
+                  }}
+                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-semibold transition-all inline-flex items-center gap-1.5"
+                >
+                  Clear Filters & Search
+                </button>
+              )}
             </div>
           ) : (
+            /* 2. Explicit EVENTS AVAILABLE State */
             events.map((evt) => {
               const isExpanded = expandedEventId === evt.id;
               const sev = getSeverityBadge(evt.severity);
@@ -590,7 +692,7 @@ export const SecurityEventsView: React.FC = () => {
                       </div>
 
                       {/* Multi-Signal Fusion Flags */}
-                      {evt.flags.length > 0 && (
+                      {evt.flags && Array.isArray(evt.flags) && evt.flags.length > 0 && (
                         <div className="space-y-1.5">
                           <div className="font-mono text-[10px] uppercase text-slate-400 font-bold flex items-center gap-1.5">
                             <Layers className="w-3 h-3 text-amber-400" />

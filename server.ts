@@ -303,7 +303,18 @@ const daemonManager = new PythonInferenceDaemonManager();
 // ----------------------------------------------------
 // SUPABASE CLIENT & PERSISTENCE (Server-Side Only)
 // ----------------------------------------------------
-const SUPABASE_URL = process.env.SUPABASE_URL || "";
+function sanitizeSupabaseUrl(rawUrl: string): string {
+  if (!rawUrl) return "";
+  let clean = rawUrl.trim();
+  // Strip accidental trailing REST / Auth API path segments and trailing slashes
+  clean = clean.replace(/\/rest\/v1\/?$/i, "");
+  clean = clean.replace(/\/auth\/v1\/?$/i, "");
+  clean = clean.replace(/\/storage\/v1\/?$/i, "");
+  clean = clean.replace(/\/+$/, "");
+  return clean;
+}
+
+const SUPABASE_URL = sanitizeSupabaseUrl(process.env.SUPABASE_URL || "");
 const SUPABASE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_KEY ||
@@ -316,7 +327,7 @@ if (SUPABASE_URL && SUPABASE_KEY) {
     supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    console.log("[Supabase] Initialized backend database client successfully.");
+    console.log(`[Supabase] Initialized backend database client successfully with endpoint: ${SUPABASE_URL}`);
   } catch (err: any) {
     console.warn("[Supabase] Failed to initialize client:", err.message);
   }
@@ -1629,7 +1640,7 @@ const handleGetSecurityEvents = async (req: express.Request, res: express.Respon
           (e.contact_id || "").toLowerCase().includes(search);
         const matchRole = (e.claimed_role || "").toLowerCase().includes(search);
         const matchType = (e.event_type || "").toLowerCase().includes(search);
-        const matchFlags = e.flags.some((f) => f.toLowerCase().includes(search));
+        const matchFlags = Array.isArray(e.flags) ? e.flags.some((f) => (f || "").toLowerCase().includes(search)) : false;
         const matchExpl = (e.explanation || "").toLowerCase().includes(search);
         return matchCall || matchCaller || matchContact || matchRole || matchType || matchFlags || matchExpl;
       });

@@ -168,7 +168,7 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
           setSessionStatus("listening");
           if (message) setStatusMessage(message);
         } else if (status === "closed") {
-          setSessionStatus("idle");
+          setSessionStatus((prev) => (prev === "completed" || prev === "error" ? prev : "idle"));
           setMicVolumeDb(-100);
           setMicPeak(0);
           if (message) setStatusMessage(message);
@@ -192,11 +192,11 @@ export const LiveAnalysisView: React.FC<LiveAnalysisViewProps> = ({
   };
 
   const handleStopMicrophoneStream = () => {
+    setSessionStatus("completed");
     if (micStreamerRef.current) {
       micStreamerRef.current.stop();
       micStreamerRef.current = null;
     }
-    setSessionStatus("completed");
     setMicVolumeDb(-100);
     setMicPeak(0);
   };

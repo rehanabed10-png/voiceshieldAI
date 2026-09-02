@@ -266,7 +266,7 @@ export default function App() {
           )}
 
           {/* Tab 4: Security Events & Audit Trail */}
-          {activeTab === "security" && (
+          {(activeTab === "events" || (activeTab as string) === "security") && (
             <SecurityEventsView />
           )}
 

@@ -149,7 +149,7 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a"
+              accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg,.webm,.aac"
               onChange={handleFileChange}
               disabled={isProcessing}
               className="hidden"
@@ -177,7 +177,7 @@ export const AudioUpload: React.FC<AudioUploadProps> = ({
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-xs font-mono text-slate-400">
               <span className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10">
-                WAV &bull; FLAC &bull; MP3 &bull; OGG
+                WAV &bull; MP3 &bull; M4A &bull; FLAC &bull; OGG &bull; WEBM &bull; AAC
               </span>
               <span className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10">
                 0.5s – 30.0s Window

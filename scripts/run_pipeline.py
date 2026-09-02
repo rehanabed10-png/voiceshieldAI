@@ -692,6 +692,16 @@ class PipelineWorker:
                 "pipeline_latency_ms": round(total_latency_ms, 2),
             }
 
+        # Apply standard peak amplitude normalization matching AudioPreprocessor
+        if peak_amp > 1e-5 and getattr(self.preprocessor.config, "normalize_amplitude", True):
+            norm_target = getattr(self.preprocessor.config, "target_peak_amplitude", 0.95)
+            scale = norm_target / peak_amp
+            samples = [min(1.0, max(-1.0, s * scale)) for s in samples]
+            peak_amp = max(abs(s) for s in samples)
+            rms = calculate_rms(samples)
+            rms_db = linear_to_db(rms)
+            snr_db = calculate_snr_estimate(samples)
+
         preprocessed = PreprocessedAudio(
             waveform=samples,
             sample_rate=sr,

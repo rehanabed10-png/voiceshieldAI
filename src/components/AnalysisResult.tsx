@@ -30,9 +30,10 @@ interface AnalysisResultProps {
 export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset }) => {
   const [copied, setCopied] = useState(false);
 
-  const isFake = result.deepfake_detection.prediction === "FAKE";
-  const isHighRisk = result.risk_level === "HIGH" || result.risk_level === "CRITICAL" || result.risk_score >= 60;
-  const isLowRisk = result.risk_level === "LOW" && result.risk_score < 40;
+  const isFake = result.deepfake_detection.prediction === "FAKE" || result.deepfake_detection.fake_probability >= 0.5;
+  const isHighRisk = result.risk_level === "HIGH" || result.risk_level === "CRITICAL" || result.risk_score >= 60 || isFake;
+  const isMediumRisk = !isHighRisk && (result.risk_level === "MEDIUM" || result.risk_score >= 40);
+  const isLowRisk = !isHighRisk && !isMediumRisk;
 
   const fakePct = (result.deepfake_detection.fake_probability * 100).toFixed(1);
   const realPct = (result.deepfake_detection.real_probability * 100).toFixed(1);
@@ -155,6 +156,71 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, onReset 
             >
               <Ban className="w-4 h-4" />
               {result.recommended_action === "BLOCK" ? "TERMINATE CALL IMMEDIATELY" : actionTheme.label}
+            </button>
+          </div>
+        </section>
+      ) : isMediumRisk ? (
+        /* Medium-Risk / Suspicious Banner */
+        <section className="glass-card rounded-2xl p-6 sm:p-8 shadow-2xl border border-amber-500/40 bg-amber-950/20 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-3.5 py-1 rounded-full text-xs font-mono font-bold tracking-widest flex items-center gap-1.5 shadow-sm">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                SUSPICIOUS &bull; CAUTION ADVISED
+              </span>
+              <span className="text-xs font-mono bg-black/40 px-3 py-1 rounded-full border border-white/10 text-amber-300">
+                VERDICT: SUSPICIOUS
+              </span>
+            </div>
+
+            <h2 className="text-5xl font-black text-amber-400 uppercase tracking-tight font-display">
+              CAUTION
+            </h2>
+
+            <p className="text-sm text-slate-300 font-medium max-w-2xl">
+              Elevated acoustic variance or context mismatch detected. Secondary verification is advised before proceeding with sensitive operations.
+            </p>
+          </div>
+
+          {/* Right Gauge */}
+          <div className="flex flex-col items-end gap-3 glass-card p-5 rounded-2xl shadow-xl w-full md:w-auto shrink-0 border border-white/10">
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-[11px] font-mono text-slate-400 uppercase">RISK SCORE</p>
+                <p className="text-3xl font-black text-white leading-none font-mono">
+                  {result.risk_score}<span className="text-base text-slate-500 font-normal">/100</span>
+                </p>
+              </div>
+
+              {/* Circular Gauge */}
+              <div className="relative w-16 h-16 flex items-center justify-center bg-black/40 rounded-full shadow-inner p-1">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" fill="none" r="45" stroke="rgba(255,255,255,0.1)" strokeWidth="8" />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    fill="none"
+                    r="45"
+                    stroke="#f59e0b"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={strokeOffset}
+                    strokeLinecap="round"
+                    strokeWidth="8"
+                    className="transition-all duration-1000 ease-out"
+                  />
+                </svg>
+                <span className="absolute text-sm font-bold font-mono text-amber-400">
+                  {result.risk_score}
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={onReset}
+              className="w-full bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold py-2.5 px-5 rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 squish-btn font-mono"
+            >
+              <RotateCcw className="w-4 h-4" />
+              {actionTheme.label}
             </button>
           </div>
         </section>
