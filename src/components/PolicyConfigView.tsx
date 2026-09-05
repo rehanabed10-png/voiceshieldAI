@@ -143,34 +143,34 @@ export const PolicyConfigView: React.FC = () => {
   return (
     <div id="policy-config-view" className="space-y-6">
       {/* Top Banner */}
-      <div className="glass-card rounded-2xl p-6 border border-white/10 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-start gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0 mt-0.5">
-            <Sliders className="w-5 h-5" />
+      <div className="liquid-panel rounded-3xl p-6 border border-white/15 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-2xl liquid-pill border border-cyan-400/30 flex items-center justify-center text-cyan-300 shrink-0 mt-0.5 shadow-[0_0_15px_rgba(34,211,238,0.25)]">
+            <Sliders className="w-6 h-6 glow-cyan" />
           </div>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base font-bold text-white">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className="text-lg font-bold text-white font-display">
                 Organization Policy &amp; Security Controls Engine
               </h2>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                 TENANT ISOLATION ACTIVE
               </span>
-              <span className="text-[10px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded border border-white/10">
+              <span className="text-[10px] font-mono text-cyan-300 bg-cyan-500/10 px-2.5 py-0.5 rounded-full border border-cyan-500/20">
                 Org: {orgId.substring(0, 18)}...
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-              Authoritatively manages deterministic fusion thresholds, neural deepfake triggers, biometric strictness, and automated transaction hold limits across all voice channels.
+            <p className="text-xs text-slate-300/80 mt-1 max-w-3xl leading-relaxed">
+              Authoritatively manages deterministic fusion thresholds, neural deepfake triggers, biometric strictness, and automated transaction hold limits across all incoming voice streams.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-start md:self-center">
+        <div className="flex items-center gap-3 self-start md:self-center shrink-0">
           <button
             onClick={handleReset}
             disabled={isResetting || isSaving || isLoading}
-            className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-mono font-semibold transition-all flex items-center gap-1.5 disabled:opacity-50"
+            className="px-4 py-2 rounded-xl liquid-btn-glass text-slate-300 text-xs font-mono font-semibold transition-all flex items-center gap-2 disabled:opacity-50 squish-btn"
             title="Restore system defaults"
           >
             <RotateCcw className={`w-3.5 h-3.5 ${isResetting ? "animate-spin" : ""}`} />
@@ -179,14 +179,14 @@ export const PolicyConfigView: React.FC = () => {
           <button
             onClick={handleSave}
             disabled={isSaving || isResetting || isLoading}
-            className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold font-mono flex items-center gap-2 shadow-lg shadow-blue-500/25 transition-all squish-btn disabled:opacity-50"
+            className="px-6 py-2.5 rounded-xl liquid-btn-primary text-slate-950 text-xs font-bold font-mono flex items-center gap-2 transition-all squish-btn disabled:opacity-50"
           >
             {isSaving ? (
-              <RefreshCw className="w-4 h-4 animate-spin text-white" />
+              <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
             ) : saveSuccessMsg ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+              <CheckCircle2 className="w-4 h-4 text-slate-950" />
             ) : (
-              <Save className="w-4 h-4" />
+              <Save className="w-4 h-4 text-slate-950" />
             )}
             {isSaving ? "Saving..." : saveSuccessMsg ? "Enforced" : "Save Policy"}
           </button>
@@ -195,27 +195,27 @@ export const PolicyConfigView: React.FC = () => {
 
       {/* Status Notifications */}
       {saveSuccessMsg && (
-        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2 font-mono animate-fade-in">
+        <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2.5 font-mono shadow-[0_0_15px_rgba(52,211,153,0.15)]">
           <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
           <span>{saveSuccessMsg}</span>
         </div>
       )}
 
       {errorMessage && (
-        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs flex items-center gap-2 font-mono animate-fade-in">
-          <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+        <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5 font-mono shadow-[0_0_15px_rgba(244,63,94,0.15)]">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
           <span>{errorMessage}</span>
         </div>
       )}
 
       {/* Sub-tabs: Configuration vs. Audit Logs */}
-      <div className="flex items-center justify-between border-b border-white/10 pb-2">
+      <div className="flex items-center justify-between border-b border-white/10 pb-3">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setActiveSubTab("thresholds")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-xl text-xs font-mono font-semibold transition-all flex items-center gap-2 ${
               activeSubTab === "thresholds"
-                ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-400/40 shadow-[0_0_10px_rgba(34,211,238,0.2)]"
                 : "text-slate-400 hover:text-white hover:bg-white/5"
             }`}
           >
@@ -224,9 +224,9 @@ export const PolicyConfigView: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveSubTab("audit")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-xl text-xs font-mono font-semibold transition-all flex items-center gap-2 ${
               activeSubTab === "audit"
-                ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-400/40 shadow-[0_0_10px_rgba(34,211,238,0.2)]"
                 : "text-slate-400 hover:text-white hover:bg-white/5"
             }`}
           >
@@ -235,7 +235,7 @@ export const PolicyConfigView: React.FC = () => {
           </button>
         </div>
 
-        <span className="text-[11px] font-mono text-slate-500">
+        <span className="text-[11px] font-mono text-slate-400">
           Source: Authoritative DB Context
         </span>
       </div>
@@ -243,31 +243,31 @@ export const PolicyConfigView: React.FC = () => {
       {activeSubTab === "thresholds" ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Card 1: Neural Detection & Acoustic Sensitivity */}
-          <div className="glass-card rounded-2xl p-6 space-y-5 border border-white/10 shadow-lg">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-                  <Cpu className="w-4 h-4" />
+          <div className="liquid-panel rounded-3xl p-6 space-y-5 border border-white/15 shadow-2xl relative overflow-hidden">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl liquid-pill border border-cyan-400/30 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.25)]">
+                  <Cpu className="w-4 h-4 glow-cyan" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">Neural &amp; Acoustic Scoring</h3>
-                  <div className="text-[10px] text-slate-400">Wav2Vec2 + Prosody Feature Extraction</div>
+                  <h3 className="text-sm font-bold text-white font-display">Neural &amp; Acoustic Scoring</h3>
+                  <div className="text-[10px] font-mono text-slate-400">Wav2Vec2 + Prosody Feature Extraction</div>
                 </div>
               </div>
-              <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-400/20">
+              <span className="text-[10px] font-mono text-cyan-300 bg-cyan-500/10 px-2.5 py-1 rounded-full border border-cyan-400/30">
                 Wav2Vec2 300M
               </span>
             </div>
 
             <div className="space-y-5 text-xs">
               {/* Slider 1: Critical Deepfake Threshold */}
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="font-semibold text-slate-200 flex items-center gap-1.5">
+                  <label className="font-semibold text-slate-200 flex items-center gap-1.5 font-mono text-[11px]">
                     <span>Critical Synthetic Deepfake Threshold:</span>
-                    <span className="text-[10px] text-red-400 font-mono font-bold">(Triggers BLOCK)</span>
+                    <span className="text-[10px] text-rose-400 font-mono font-bold">(Triggers BLOCK)</span>
                   </label>
-                  <span className="font-mono text-red-400 font-bold bg-red-500/10 px-2 py-0.5 rounded border border-red-400/20">
+                  <span className="font-mono text-rose-400 font-bold bg-rose-500/10 px-2.5 py-0.5 rounded border border-rose-400/30">
                     {(policy.fake_prob_critical_threshold * 100).toFixed(0)}%
                   </span>
                 </div>
@@ -286,7 +286,7 @@ export const PolicyConfigView: React.FC = () => {
                       fake_prob_warn_threshold: Math.min(prev.fake_prob_warn_threshold, val),
                     }));
                   }}
-                  className="w-full accent-red-500 cursor-pointer"
+                  className="w-full accent-rose-500 cursor-pointer"
                 />
                 <div className="flex justify-between text-[10px] font-mono text-slate-500">
                   <span>50% (High Sensitivity)</span>
@@ -296,13 +296,13 @@ export const PolicyConfigView: React.FC = () => {
               </div>
 
               {/* Slider 2: Warning Threshold */}
-              <div className="space-y-1.5 pt-2 border-t border-white/5">
+              <div className="space-y-2 pt-3 border-t border-white/10">
                 <div className="flex items-center justify-between">
-                  <label className="font-semibold text-slate-200 flex items-center gap-1.5">
+                  <label className="font-semibold text-slate-200 flex items-center gap-1.5 font-mono text-[11px]">
                     <span>Warning / Suspicious Deepfake Threshold:</span>
                     <span className="text-[10px] text-amber-400 font-mono font-bold">(Triggers WARN / STEP-UP)</span>
                   </label>
-                  <span className="font-mono text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-400/20">
+                  <span className="font-mono text-amber-400 font-bold bg-amber-500/10 px-2.5 py-0.5 rounded border border-amber-400/30">
                     {(policy.fake_prob_warn_threshold * 100).toFixed(0)}%
                   </span>
                 </div>
@@ -328,13 +328,13 @@ export const PolicyConfigView: React.FC = () => {
               </div>
 
               {/* Slider 3: Acoustic Anomaly Sensitivity */}
-              <div className="space-y-1.5 pt-2 border-t border-white/5">
+              <div className="space-y-2 pt-3 border-t border-white/10">
                 <div className="flex items-center justify-between">
-                  <label className="font-semibold text-slate-200 flex items-center gap-1.5">
+                  <label className="font-semibold text-slate-200 flex items-center gap-1.5 font-mono text-[11px]">
                     <span>Acoustic Prosody Anomaly Sensitivity:</span>
-                    <span className="text-[10px] text-emerald-400 font-mono font-bold">(Jitter / Shimmer / Formants)</span>
+                    <span className="text-[10px] text-cyan-300 font-mono font-bold">(Jitter / Shimmer / Formants)</span>
                   </label>
-                  <span className="font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-400/20">
+                  <span className="font-mono text-cyan-300 font-bold bg-cyan-500/10 px-2.5 py-0.5 rounded border border-cyan-400/30">
                     {(policy.acoustic_anomaly_sensitivity * 100).toFixed(0)}%
                   </span>
                 </div>
@@ -350,7 +350,7 @@ export const PolicyConfigView: React.FC = () => {
                       acoustic_anomaly_sensitivity: parseFloat(e.target.value),
                     }))
                   }
-                  className="w-full accent-emerald-500 cursor-pointer"
+                  className="w-full accent-cyan-400 cursor-pointer"
                 />
                 <div className="flex justify-between text-[10px] font-mono text-slate-500">
                   <span>40% (Lenient Pitch)</span>
@@ -362,18 +362,18 @@ export const PolicyConfigView: React.FC = () => {
           </div>
 
           {/* Card 2: Biometric Verification & Step-Up Routing */}
-          <div className="glass-card rounded-2xl p-6 space-y-5 border border-white/10 shadow-lg">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+          <div className="liquid-panel rounded-3xl p-6 space-y-5 border border-white/15 shadow-2xl relative overflow-hidden">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl liquid-pill border border-purple-400/30 flex items-center justify-center text-purple-400 shadow-[0_0_12px_rgba(192,132,252,0.25)]">
                   <Fingerprint className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">Biometrics &amp; Step-Up Enforcement</h3>
-                  <div className="text-[10px] text-slate-400">ECAPA-TDNN 192-D Voiceprints</div>
+                  <h3 className="text-sm font-bold text-white font-display">Biometrics &amp; Step-Up Enforcement</h3>
+                  <div className="text-[10px] font-mono text-slate-400">ECAPA-TDNN 192-D Voiceprints</div>
                 </div>
               </div>
-              <span className="text-[10px] font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-400/20">
+              <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2.5 py-1 rounded-full border border-purple-400/30">
                 192-D Cosine
               </span>
             </div>
@@ -382,15 +382,15 @@ export const PolicyConfigView: React.FC = () => {
               {/* Speaker Verification Strictness */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="font-semibold text-slate-200">
+                  <label className="font-semibold text-slate-200 font-mono text-[11px]">
                     Speaker Verification Threshold (τ):
                   </label>
-                  <span className="font-mono text-purple-400 font-bold bg-purple-500/10 px-2 py-0.5 rounded border border-purple-400/20">
+                  <span className="font-mono text-purple-300 font-bold bg-purple-500/10 px-2.5 py-0.5 rounded border border-purple-400/30">
                     τ = {policy.speaker_verification_strictness.toFixed(2)}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2.5">
                   {[
                     { val: 0.60, label: "Lenient", sub: "τ = 0.60" },
                     { val: 0.65, label: "Standard", sub: "τ = 0.65 (Def)" },
@@ -405,14 +405,14 @@ export const PolicyConfigView: React.FC = () => {
                           speaker_verification_strictness: tier.val,
                         }))
                       }
-                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                      className={`p-3 rounded-2xl border text-left transition-all font-mono ${
                         Math.abs(policy.speaker_verification_strictness - tier.val) < 0.03
-                          ? "bg-purple-500/20 border-purple-400 text-white font-bold shadow-sm"
-                          : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white"
+                          ? "bg-purple-500/20 border-purple-400 text-white font-bold shadow-[0_0_12px_rgba(192,132,252,0.3)]"
+                          : "liquid-inner-well border-white/10 text-slate-400 hover:text-white"
                       }`}
                     >
-                      <div className="text-xs">{tier.label}</div>
-                      <div className="text-[10px] font-mono text-slate-400">{tier.sub}</div>
+                      <div className="text-xs font-semibold">{tier.label}</div>
+                      <div className="text-[10px] text-slate-400">{tier.sub}</div>
                     </button>
                   ))}
                 </div>
@@ -429,18 +429,18 @@ export const PolicyConfigView: React.FC = () => {
                       speaker_verification_strictness: parseFloat(e.target.value),
                     }))
                   }
-                  className="w-full accent-purple-500 cursor-pointer mt-1"
+                  className="w-full accent-purple-500 cursor-pointer mt-2"
                 />
               </div>
 
               {/* Transaction Auto-Hold Amount */}
-              <div className="space-y-1.5 pt-2 border-t border-white/5">
+              <div className="space-y-2 pt-3 border-t border-white/10">
                 <div className="flex items-center justify-between">
-                  <label className="font-semibold text-slate-200 flex items-center gap-1">
+                  <label className="font-semibold text-slate-200 flex items-center gap-1.5 font-mono text-[11px]">
                     <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Transaction Auto-Hold Amount:</span>
                   </label>
-                  <span className="font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-400/20">
+                  <span className="font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-0.5 rounded border border-emerald-400/30">
                     ${policy.transaction_auto_hold_amount.toLocaleString()}
                   </span>
                 </div>
@@ -456,10 +456,10 @@ export const PolicyConfigView: React.FC = () => {
                         transaction_auto_hold_amount: Math.max(0, parseFloat(e.target.value) || 0),
                       }))
                     }
-                    className="flex-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-white font-mono text-xs focus:border-blue-500 focus:outline-none"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl liquid-inner-well border border-white/10 text-white font-mono text-xs focus:border-cyan-400/50 focus:outline-none"
                     placeholder="Enter threshold (e.g. 50000)"
                   />
-                  <div className="flex gap-1">
+                  <div className="flex gap-1.5">
                     {[10000, 50000, 500000].map((amt) => (
                       <button
                         key={amt}
@@ -470,27 +470,27 @@ export const PolicyConfigView: React.FC = () => {
                             transaction_auto_hold_amount: amt,
                           }))
                         }
-                        className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-[10px] font-mono text-slate-300 border border-white/10"
+                        className="px-2.5 py-2 rounded-xl liquid-btn-glass text-[10px] font-mono text-slate-300"
                       >
                         ${amt / 1000}k
                       </button>
                     ))}
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px] font-mono text-slate-400">
                   Transactions exceeding this amount will automatically be placed on HOLD pending secondary verification.
                 </p>
               </div>
 
               {/* Automated Actions & Step-Up Toggles */}
-              <div className="space-y-2.5 pt-2 border-t border-white/5">
-                <label className="flex items-center justify-between cursor-pointer p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+              <div className="space-y-2.5 pt-3 border-t border-white/10">
+                <label className="flex items-center justify-between cursor-pointer p-3.5 rounded-2xl liquid-inner-well border border-rose-500/20 hover:border-rose-500/40 transition-colors">
                   <div className="space-y-0.5">
-                    <div className="font-semibold text-red-300 flex items-center gap-1.5">
-                      <ShieldAlert className="w-3.5 h-3.5" />
+                    <div className="font-semibold text-rose-300 flex items-center gap-2 font-mono text-xs">
+                      <ShieldAlert className="w-4 h-4 text-rose-400" />
                       Auto-Block on Critical Deepfake
                     </div>
-                    <div className="text-[11px] text-slate-400">
+                    <div className="text-[11px] text-slate-400 font-mono">
                       Instantly terminates call and blocks financial operations when synthesis &gt; {(policy.fake_prob_critical_threshold * 100).toFixed(0)}%.
                     </div>
                   </div>
@@ -503,17 +503,17 @@ export const PolicyConfigView: React.FC = () => {
                         auto_block_on_critical_deepfake: e.target.checked,
                       }))
                     }
-                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-red-500 focus:ring-0 cursor-pointer"
+                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-rose-500 focus:ring-0 cursor-pointer accent-rose-500"
                   />
                 </label>
 
-                <label className="flex items-center justify-between cursor-pointer p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+                <label className="flex items-center justify-between cursor-pointer p-3.5 rounded-2xl liquid-inner-well border border-amber-500/20 hover:border-amber-500/40 transition-colors">
                   <div className="space-y-0.5">
-                    <div className="font-semibold text-amber-300 flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5" />
+                    <div className="font-semibold text-amber-300 flex items-center gap-2 font-mono text-xs">
+                      <Zap className="w-4 h-4 text-amber-400" />
                       Enforce Step-Up Secondary Verification
                     </div>
-                    <div className="text-[11px] text-slate-400">
+                    <div className="text-[11px] text-slate-400 font-mono">
                       Mandate out-of-band verification (OTP / Callback) on elevated risk or role mismatches.
                     </div>
                   </div>
@@ -526,7 +526,7 @@ export const PolicyConfigView: React.FC = () => {
                         step_up_verification_required: e.target.checked,
                       }))
                     }
-                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 cursor-pointer"
+                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 cursor-pointer accent-amber-500"
                   />
                 </label>
               </div>
@@ -535,15 +535,17 @@ export const PolicyConfigView: React.FC = () => {
         </div>
       ) : (
         /* Audit Logs View */
-        <div className="glass-card rounded-2xl p-6 border border-white/10 shadow-lg space-y-4">
-          <div className="flex items-center justify-between border-b border-white/10 pb-3">
-            <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-blue-400" />
-              <h3 className="text-sm font-bold text-white">Policy Engine Audit Log Trail</h3>
+        <div className="liquid-panel rounded-3xl p-6 border border-white/15 shadow-2xl space-y-4 relative overflow-hidden">
+          <div className="flex items-center justify-between border-b border-white/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl liquid-pill border border-cyan-400/30 flex items-center justify-center text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.25)]">
+                <History className="w-4 h-4 glow-cyan" />
+              </div>
+              <h3 className="text-sm font-bold text-white font-display">Policy Engine Audit Log Trail</h3>
             </div>
             <button
               onClick={loadPolicy}
-              className="text-xs text-slate-400 hover:text-white flex items-center gap-1 font-mono"
+              className="text-xs text-cyan-300 hover:text-white flex items-center gap-1.5 font-mono liquid-btn-glass px-3 py-1.5 rounded-xl"
             >
               <RefreshCw className="w-3 h-3" />
               Refresh
@@ -551,7 +553,7 @@ export const PolicyConfigView: React.FC = () => {
           </div>
 
           {auditLogs.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 font-mono text-xs">
+            <div className="py-12 text-center text-slate-400 font-mono text-xs liquid-inner-well rounded-2xl">
               No policy modifications recorded yet for this organization.
             </div>
           ) : (
@@ -559,36 +561,36 @@ export const PolicyConfigView: React.FC = () => {
               {auditLogs.map((log, idx) => (
                 <div
                   key={log.id || idx}
-                  className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-2 text-xs"
+                  className="p-4 rounded-2xl liquid-inner-well border border-white/10 space-y-2 text-xs"
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-400/20">
+                    <div className="flex items-center gap-2.5">
+                      <span className="font-mono font-bold text-cyan-300 bg-cyan-500/10 px-2.5 py-0.5 rounded-full border border-cyan-400/30">
                         {log.action || "UPDATE_ORGANIZATION_POLICY"}
                       </span>
-                      <span className="text-slate-300 font-semibold flex items-center gap-1">
+                      <span className="text-slate-300 font-semibold flex items-center gap-1.5 font-mono">
                         <UserCheck className="w-3.5 h-3.5 text-slate-400" />
                         {log.actor || "SecurityAdmin"}
                       </span>
                     </div>
-                    <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                    <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1.5">
                       <Clock className="w-3 h-3" />
                       {new Date(log.timestamp).toLocaleString()}
                     </span>
                   </div>
 
                   {log.changes && log.changes.length > 0 ? (
-                    <div className="space-y-1 pt-1 border-t border-white/5">
+                    <div className="space-y-1.5 pt-2 border-t border-white/5">
                       <div className="text-[10px] font-mono text-slate-400">Modified Fields:</div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {log.changes.map((c, cIdx) => (
                           <div
                             key={cIdx}
-                            className="p-1.5 rounded bg-black/40 border border-white/5 font-mono text-[11px] flex items-center justify-between"
+                            className="p-2 rounded-xl bg-black/40 border border-white/5 font-mono text-[11px] flex items-center justify-between"
                           >
                             <span className="text-slate-300">{c.field}</span>
                             <span className="text-slate-400">
-                              <span className="text-red-400 line-through mr-1">{String(c.prev)}</span>
+                              <span className="text-rose-400 line-through mr-1">{String(c.prev)}</span>
                               &rarr;
                               <span className="text-emerald-400 ml-1 font-bold">{String(c.next)}</span>
                             </span>

@@ -4,16 +4,13 @@ import {
   Radio,
   FileAudio,
   UserCheck,
-  ShieldAlert,
   Sliders,
-  Activity,
-  Terminal,
   ChevronRight,
-  Zap,
-  Lock,
+  ExternalLink,
+  Shield,
+  Activity,
   Cpu,
-  HelpCircle,
-  ExternalLink
+  Lock
 } from "lucide-react";
 
 export type NavTab = "live" | "analysis" | "speakers" | "policy";
@@ -32,37 +29,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onTabChange,
   enrolledCount,
-  threatCount = 0,
   isStreaming = false,
 }) => {
   const navItems = [
     {
       id: "live" as NavTab,
-      label: "Live Call Intercept",
+      label: "Live Analysis",
       subtext: "Real-time stream & biometrics",
       icon: Radio,
       badge: isStreaming ? "STREAMING" : "LIVE",
       badgeColor: isStreaming
         ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-        : "bg-blue-500/20 text-blue-300 border-blue-500/30",
+        : "bg-cyan-500/20 text-cyan-300 border-cyan-400/30 shadow-[0_0_10px_rgba(34,211,238,0.3)]",
     },
     {
       id: "analysis" as NavTab,
       label: "Payload Inspection",
-      subtext: "Single audio file deep scan",
+      subtext: "Audio forensic deep scan",
       icon: FileAudio,
     },
     {
       id: "speakers" as NavTab,
-      label: "Voice Biometrics",
-      subtext: "192-D ECAPA profile store",
+      label: "Speaker Profiles",
+      subtext: "ECAPA-TDNN 192-d voiceprints",
       icon: UserCheck,
       count: enrolledCount,
     },
     {
       id: "policy" as NavTab,
       label: "Policy Engine",
-      subtext: "Thresholds & step-up routing",
+      subtext: "Thresholds & fraud routing",
       icon: Sliders,
     },
   ];
@@ -70,130 +66,144 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       id="stitch-sidebar"
-      className="hidden lg:flex flex-col w-64 glass-nav h-screen sticky top-0 z-40 border-r border-white/10 select-none justify-between p-4 overflow-y-auto"
+      className="hidden lg:flex flex-col w-64 sidebar-glass h-screen sticky top-0 z-40 border-r border-white/10 select-none justify-between p-4 overflow-y-auto"
     >
-      {/* Brand Header */}
+      {/* Top Header & Logo */}
       <div className="space-y-6">
-        <div className="flex items-center gap-3 px-2 py-1">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-lg shadow-blue-500/20 border border-white/20 shrink-0">
-            <ShieldCheck className="w-6 h-6 text-emerald-300" />
+        {/* Brand Ribbon */}
+        <div className="flex items-center gap-3 px-2 py-1.5 border-b border-white/5 pb-4">
+          <div className="w-10 h-10 rounded-2xl liquid-pill flex items-center justify-center border border-cyan-400/30 shadow-[0_0_20px_rgba(34,211,238,0.35)] relative overflow-hidden shrink-0 group">
+            <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 via-blue-500/20 to-purple-500/20 opacity-90"></div>
+            <ShieldCheck className="w-5 h-5 text-cyan-300 relative z-10 glow-cyan" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="text-base font-extrabold text-white tracking-tight font-sans">
+              <span className="text-base font-extrabold text-white tracking-tight font-display">
                 VoiceShield
               </span>
-              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                PRO
+              <span className="text-[10px] font-mono font-extrabold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                AI
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 font-mono truncate">
-              SIH 2026 #26104 &bull; SOC Tier-1
+            <p className="text-[10px] text-slate-400 font-mono tracking-wider uppercase truncate">
+              Real Voices • Safe World
             </p>
           </div>
         </div>
 
-        {/* Status Callout Pill */}
-        <div className="glass-panel-darker rounded-xl p-3 border border-white/10 space-y-1.5">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-slate-400 font-mono flex items-center gap-1.5">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              Engine Online
-            </span>
-            <span className="text-[10px] font-mono text-emerald-400 font-bold">FP16 CUDA</span>
-          </div>
-          <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-            <span>Wav2Vec2 + ECAPA</span>
-            <span>&lt; 350ms</span>
-          </div>
-        </div>
-
-        {/* Navigation Item List */}
-        <nav className="space-y-1">
-          <div className="px-3 pb-2 text-[10px] font-bold font-mono uppercase tracking-wider text-slate-400">
-            Navigation & Analytics
+        {/* Navigation Section */}
+        <div className="space-y-2">
+          <div className="px-3 text-[10px] font-mono font-bold uppercase tracking-widest text-slate-400">
+            Command Systems
           </div>
 
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
+          <nav className="space-y-1.5">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
 
-            return (
-              <button
-                key={item.id}
-                id={`sidebar-nav-${item.id}`}
-                onClick={() => onTabChange(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all group squish-btn ${
-                  isActive
-                    ? "bg-gradient-to-r from-blue-600/30 to-indigo-600/20 border border-blue-400/40 text-white shadow-md"
-                    : "text-slate-300 hover:text-white hover:bg-white/5 border border-transparent"
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                      isActive
-                        ? "bg-blue-500 text-white shadow-sm shadow-blue-500/50"
-                        : "bg-white/5 text-slate-400 group-hover:text-blue-400 group-hover:bg-white/10"
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <div className="truncate">
-                    <div className="text-xs font-semibold leading-snug">{item.label}</div>
-                    <div className="text-[10px] text-slate-400 truncate">{item.subtext}</div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0 pl-1">
-                  {item.badge && (
-                    <span
-                      className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full border ${item.badgeColor}`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                  {item.count !== undefined && (
-                    <span
-                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+              return (
+                <button
+                  key={item.id}
+                  id={`sidebar-nav-${item.id}`}
+                  onClick={() => onTabChange(item.id)}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-left transition-all group squish-btn ${
+                    isActive
+                      ? "nav-active-glow text-white font-semibold"
+                      : "text-slate-300 hover:text-white hover:bg-white/[0.06] border border-transparent"
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-all ${
                         isActive
-                          ? "bg-blue-400/30 text-blue-200"
-                          : "bg-slate-800 text-slate-400 group-hover:text-slate-200"
+                          ? "bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.4)]"
+                          : "bg-white/5 border border-white/5 text-slate-400 group-hover:text-cyan-300 group-hover:bg-white/10"
                       }`}
                     >
-                      {item.count}
-                    </span>
-                  )}
-                  {isActive && <ChevronRight className="w-3.5 h-3.5 text-blue-400" />}
-                </div>
-              </button>
-            );
-          })}
-        </nav>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="truncate">
+                      <div className="text-xs font-semibold leading-snug">{item.label}</div>
+                      <div className="text-[10px] text-slate-400 truncate font-mono">{item.subtext}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0 pl-1">
+                    {item.badge && (
+                      <span
+                        className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full border ${item.badgeColor}`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                    {item.count !== undefined && (
+                      <span
+                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                          isActive
+                            ? "bg-cyan-400/30 text-cyan-200 border border-cyan-400/40"
+                            : "bg-black/40 text-slate-400 group-hover:text-slate-200 border border-white/5"
+                        }`}
+                      >
+                        {item.count}
+                      </span>
+                    )}
+                    {isActive && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
       </div>
 
-      {/* Footer Profile & Security Specs */}
-      <div className="pt-4 border-t border-white/10 space-y-3">
-        <div className="glass-card rounded-xl p-3 flex items-center justify-between border border-white/10">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center text-slate-950 font-bold text-xs shadow-sm">
-              SO
-            </div>
-            <div>
-              <div className="text-xs font-bold text-slate-200">Security Analyst</div>
-              <div className="text-[10px] text-slate-400 font-mono">Org: voice-shield-core</div>
-            </div>
+      {/* Bottom Telemetry & Status Capsule (Figma Spec) */}
+      <div className="pt-4 space-y-3">
+        {/* Engine Cosine τ Well */}
+        <div className="liquid-card p-3.5 rounded-2xl flex flex-col gap-2 relative overflow-hidden border-white/15">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+              Engine Cosine τ
+            </span>
+            <span className="font-mono text-xs font-bold text-cyan-300 glow-cyan">
+              0.72 Calibrated
+            </span>
           </div>
-          <div className="w-2 h-2 rounded-full bg-emerald-400" title="Active Tenant Isolated" />
+          <div className="w-full h-1.5 rounded-full bg-slate-800/80 overflow-hidden border border-white/5">
+            <div className="h-full w-3/4 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 shadow-[0_0_8px_#22d3ee]"></div>
+          </div>
+          <div className="flex justify-between items-center pt-1 border-t border-white/5">
+            <span className="font-mono text-[9.5px] text-slate-400 uppercase font-medium">LATENCY</span>
+            <span className="font-mono text-xs text-white font-semibold flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              14.2ms
+            </span>
+          </div>
         </div>
 
-        <div className="flex items-center justify-between px-2 text-[10px] text-slate-500 font-mono">
-          <span>v2.4.0 &bull; Auth-Enforced</span>
-          <span className="text-blue-400/80 hover:text-blue-300 cursor-pointer flex items-center gap-0.5">
-            Docs <ExternalLink className="w-2.5 h-2.5" />
+        {/* Operator Profile Pill */}
+        <div className="liquid-card-subtle rounded-2xl p-3 flex items-center justify-between border border-white/10">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-slate-950 font-bold text-xs shadow-sm shrink-0 border border-white/20">
+              PX
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-slate-200 truncate">Agent Phoenix</div>
+              <div className="text-[9.5px] text-cyan-400/90 font-mono uppercase tracking-wider truncate">
+                SOC Forensics L3
+              </div>
+            </div>
+          </div>
+          <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee] shrink-0" title="Active Defense Core Online" />
+        </div>
+
+        <div className="px-2 flex items-center justify-between text-slate-500 text-[10px] font-mono">
+          <span>SEC-SPEC v4.9.1</span>
+          <span className="flex items-center gap-1 text-cyan-400 font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            ONLINE
           </span>
         </div>
       </div>

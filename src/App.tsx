@@ -132,12 +132,17 @@ export default function App() {
   };
 
   return (
-    <div id="voiceshield-root" className="min-h-screen relative overflow-x-hidden font-sans text-slate-100 bg-[#070913] flex flex-col selection:bg-purple-500 selection:text-white">
-      {/* Dynamic Ambient Blur Blobs */}
+    <div id="voiceshield-root" className="min-h-screen relative overflow-x-hidden font-sans text-slate-100 bg-[#040814] flex flex-col selection:bg-cyan-500/30 selection:text-cyan-200">
+      {/* Liquid Ambient Light Blooms from Figma Spec */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="ambient-blob bg-purple-900/20 w-[650px] h-[650px] -top-40 -left-20 animate-pulse" />
-        <div className="ambient-blob bg-indigo-900/25 w-[550px] h-[550px] top-1/3 -right-32 animate-pulse" style={{ animationDelay: "2s" }} />
-        <div className="ambient-blob bg-cyan-900/15 w-[700px] h-[700px] -bottom-40 left-1/4 animate-pulse" style={{ animationDelay: "4s" }} />
+        {/* Top central cyan ambient flare */}
+        <div className="absolute -top-40 left-1/3 w-[620px] h-[540px] bg-cyan-500/15 rounded-full blur-[160px]"></div>
+        {/* Deep violet/purple orb mid-screen glow */}
+        <div className="absolute top-1/4 -left-20 w-[520px] h-[520px] bg-purple-600/15 rounded-full blur-[170px]"></div>
+        {/* Bottom right royal sapphire radiance */}
+        <div className="absolute bottom-[-10%] right-[-5%] w-[680px] h-[680px] bg-blue-600/15 rounded-full blur-[180px]"></div>
+        {/* Center holographic resonance burst */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[850px] h-[400px] bg-gradient-to-r from-cyan-600/10 via-purple-600/10 to-blue-600/10 rounded-full blur-[140px]"></div>
       </div>
 
       {/* Top Navigation Bar */}
@@ -160,7 +165,7 @@ export default function App() {
         />
 
         {/* Main Content Container */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 overflow-y-auto">
+        <main className="flex-1 max-w-[1680px] w-full mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-7 overflow-y-auto">
           
           {/* Tab 1: Threat Analysis Dashboard */}
           {activeTab === "analysis" && (
@@ -198,9 +203,9 @@ export default function App() {
                         id="btn-analyze-audio"
                         onClick={handleRunAnalysis}
                         disabled={isProcessing}
-                        className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-purple-500/25 transition-all squish-btn font-mono"
+                        className="w-full sm:w-auto px-8 py-3.5 rounded-2xl liquid-btn-primary text-slate-950 font-bold text-sm flex items-center justify-center gap-2.5 transition-all squish-btn font-mono"
                       >
-                        <ShieldCheck className="w-5 h-5 text-cyan-300" />
+                        <ShieldCheck className="w-5 h-5 text-slate-950" />
                         Execute Threat Analysis
                         <ArrowRight className="w-4 h-4" />
                       </button>
@@ -227,16 +232,16 @@ export default function App() {
               {!selectedFile && !isProcessing && !result && !error && (
                 <div
                   id="empty-dashboard-guide"
-                  className="glass-card rounded-2xl p-8 sm:p-10 text-center space-y-4 shadow-xl border border-white/10"
+                  className="liquid-panel rounded-3xl p-8 sm:p-12 text-center space-y-4 border border-white/15 shadow-2xl relative overflow-hidden"
                 >
-                  <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 mx-auto shadow-inner">
-                    <Activity className="w-7 h-7" />
+                  <div className="w-14 h-14 rounded-2xl liquid-pill border border-cyan-400/30 flex items-center justify-center text-cyan-300 mx-auto shadow-[0_0_20px_rgba(34,211,238,0.3)]">
+                    <Activity className="w-7 h-7 glow-cyan" />
                   </div>
-                  <div className="space-y-1.5 font-mono">
-                    <h3 className="text-base font-bold text-white">
-                      Real-Time Pipeline Standing By
+                  <div className="space-y-2 font-mono">
+                    <h3 className="text-lg font-bold text-white font-display">
+                      REAL-TIME FORENSIC PIPELINE STANDING BY
                     </h3>
-                    <p className="text-xs text-slate-400 max-w-xl mx-auto leading-relaxed">
+                    <p className="text-xs text-slate-300/80 max-w-xl mx-auto leading-relaxed">
                       Upload an audio stream recording or select one of the curated test samples above to evaluate synthetic voice likelihood, 192-D biometric voiceprint match, and multi-signal financial fraud risk.
                     </p>
                   </div>
@@ -272,11 +277,15 @@ export default function App() {
         </main>
       </div>
 
-      {/* Footer */}
-      <footer className="w-full relative z-10 border-t border-white/10 bg-black/40 backdrop-blur-md py-4 text-center text-xs text-slate-400">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 font-mono">
-          <span>VoiceShield &bull; Multi-Signal Anti-Spoofing & Biometric Verification</span>
-          <span className="text-[11px] text-purple-400">Wav2Vec2 Deepfake + ECAPA-TDNN Biometrics + Acoustic Prosody</span>
+      {/* Footer matching Figma reference */}
+      <footer className="w-full relative z-10 border-t border-white/10 bg-slate-950/70 backdrop-blur-2xl py-4 text-xs text-slate-400">
+        <div className="max-w-[1680px] mx-auto px-4 sm:px-8 flex flex-col sm:flex-row items-center justify-between gap-2 font-mono text-[11px]">
+          <span className="tracking-widest uppercase text-slate-400">
+            REAL PEOPLE. REAL CONVERSATIONS. STRONGER DEFENSES.
+          </span>
+          <span className="text-cyan-400/90 font-semibold tracking-wider">
+            BUILT FOR A SAFER TOMORROW • v1.0.0
+          </span>
         </div>
       </footer>
     </div>
